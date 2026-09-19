@@ -10,7 +10,7 @@ Current development stage:
 - Project foundation completed
 - Authentication foundation completed
 - Authentication API completed
-- RBAC foundation currently being implemented
+- RBAC foundation completed
 
 CampusConnect is currently under active development. Features are being developed and verified incrementally through automated test suites and containerized environments.
 
@@ -55,11 +55,13 @@ The following components are currently implemented and verified with automated t
 - Authentication API endpoints (/register, /login, /refresh, /logout, /me)
 - HttpOnly, SameSite-configured cookie handling for refresh tokens
 - End-to-end authentication unit and integration tests
+- Role-Based Access Control (RBAC) foundation (`require_role`, `require_any_role`, `require_permission`)
+- Reusable RBAC authorization guards and institutional permission mapping
+- Comprehensive RBAC unit, API integration, and privilege escalation tests
 
 ## Planned Development
 
 The following features are planned for future development:
-- Role-Based Access Control (RBAC) guards and permission matrix
 - Club management and governance
 - Event proposal workflow (event details, resource requests)
 - Hall booking and scheduling interfaces
