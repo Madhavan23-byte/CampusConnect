@@ -897,6 +897,9 @@ class WorkflowInstanceStep(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         "WorkflowInstance", back_populates="steps"
     )
     assignee: Mapped["User"] = relationship("User", foreign_keys=[assigned_to])
+    template_step: Mapped["WorkflowTemplateStep"] = relationship(
+        "WorkflowTemplateStep", foreign_keys=[template_step_id]
+    )
 
     __table_args__ = (
         UniqueConstraint(

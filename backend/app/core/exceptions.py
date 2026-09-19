@@ -126,6 +126,10 @@ class AdvanceBookingViolationError(BusinessRuleError):
     """Hall booking does not meet the minimum advance notice requirement."""
 
 
+class BudgetCapExceededError(BusinessRuleError):
+    """Institutional contribution requested exceeds policy ceiling."""
+
+
 # ---------------------------------------------------------------------------
 # HTTP 500
 # ---------------------------------------------------------------------------

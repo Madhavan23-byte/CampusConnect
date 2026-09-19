@@ -113,6 +113,8 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------ #
     # Minimum days before event date that a booking must be submitted
     HALL_BOOKING_MIN_ADVANCE_DAYS: int = 7
+    # Maximum institutional contribution cap per event (INR)
+    BUDGET_INSTITUTE_CONTRIBUTION_CAP: float = 30000.00
     # Idempotency key TTL in hours
     IDEMPOTENCY_KEY_TTL_HOURS: int = 24
     # Default academic year format: "2026-27"

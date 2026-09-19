@@ -58,7 +58,7 @@ ROLE_PERMISSIONS: Mapping[Permission, frozenset[UserRole]] = {
     # Clubs
     Permission.CLUB_CREATE: frozenset({UserRole.SYSTEM_ADMIN}),
     Permission.CLUB_UPDATE: frozenset({UserRole.CLUB_SECRETARY, UserRole.SYSTEM_ADMIN}),
-    Permission.CLUB_MANAGE_MEMBERS: frozenset({UserRole.CLUB_SECRETARY}),
+    Permission.CLUB_MANAGE_MEMBERS: frozenset({UserRole.CLUB_SECRETARY, UserRole.SYSTEM_ADMIN}),
     Permission.CLUB_VIEW_ANY: frozenset(UserRole),  # All authenticated roles can view
 
     # Events
