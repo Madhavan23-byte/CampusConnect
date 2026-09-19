@@ -30,7 +30,7 @@ os.environ.setdefault("EMAIL_PROVIDER", "development")
 from app.core.config import get_settings  # noqa: E402
 get_settings.cache_clear()
 
-from app.core.database import Base, get_db  # noqa: E402
+from app.core.database import Base, engine as app_engine, get_db  # noqa: E402
 from app.main import app  # noqa: E402
 
 
@@ -81,3 +81,22 @@ async def client(db_session) -> AsyncGenerator[AsyncClient, None]:
         yield c
 
     app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def reset_app_engine_pool_per_test():
+    """
+    Cleanly dispose the global application engine pool after each test.
+
+    Root Cause of asyncpg 'Connection._cancel' warning:
+    When health checks or startup lifespan ping the database, the global QueuePool
+    retains asyncpg connection objects. Because pytest-asyncio creates a separate
+    asyncio event loop for each test function, an existing connection from the pool
+    is borrowed across a different event loop in subsequent tests, causing asyncpg to
+    abort and fail to await Connection._cancel during loop teardown.
+
+    Disposing the engine inside the same event loop that created the connection
+    guarantees all connections are closed cleanly before the event loop shuts down.
+    """
+    yield
+    await app_engine.dispose()
