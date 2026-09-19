@@ -1,0 +1,199 @@
+"""
+CampusConnect — Enumerations
+All domain enums used across models and schemas.
+Stored as PostgreSQL native ENUM types for DB-level validation.
+"""
+import enum
+
+
+class UserRole(str, enum.Enum):
+    """
+    System-level roles determining what a user can do.
+    Keep role names stable — changing them requires a migration.
+    """
+    SYSTEM_ADMIN = "SYSTEM_ADMIN"
+    CLUB_SECRETARY = "CLUB_SECRETARY"
+    FACULTY_ADVISOR = "FACULTY_ADVISOR"
+    HALL_INCHARGE = "HALL_INCHARGE"
+    ADVISOR_STUDENTS_UNION = "ADVISOR_STUDENTS_UNION"
+    DEAN_STUDENT_AFFAIRS = "DEAN_STUDENT_AFFAIRS"
+    PRINCIPAL = "PRINCIPAL"
+    FINANCE_OFFICER = "FINANCE_OFFICER"
+
+
+class ClubMemberRole(str, enum.Enum):
+    """Role of a user within a specific club (metadata, not system permission)."""
+    SECRETARY = "SECRETARY"
+    TREASURER = "TREASURER"
+    MEMBER = "MEMBER"
+
+
+class EventType(str, enum.Enum):
+    """Category of event. Used to select the appropriate approval workflow template."""
+    CULTURAL = "CULTURAL"
+    TECHNICAL = "TECHNICAL"
+    SPORTS = "SPORTS"
+    WORKSHOP = "WORKSHOP"
+    SEMINAR = "SEMINAR"
+    GUEST_LECTURE = "GUEST_LECTURE"
+    COMPETITION = "COMPETITION"
+    OUTREACH = "OUTREACH"
+    OTHER = "OTHER"
+
+
+class EventRequestStatus(str, enum.Enum):
+    """
+    Lifecycle states of an EventRequest (proposal).
+    State transitions are enforced by the approval service.
+    """
+    DRAFT = "DRAFT"
+    SUBMITTED = "SUBMITTED"
+    IN_REVIEW = "IN_REVIEW"
+    REVISION_REQUIRED = "REVISION_REQUIRED"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    CANCELLED = "CANCELLED"
+
+
+class EventStatus(str, enum.Enum):
+    """Lifecycle states of a confirmed Event (created from approved EventRequest)."""
+    SCHEDULED = "SCHEDULED"
+    ACTIVE = "ACTIVE"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+    ARCHIVED = "ARCHIVED"
+
+
+class WorkflowInstanceStatus(str, enum.Enum):
+    """Status of an approval workflow instance."""
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
+    REJECTED = "REJECTED"
+    CANCELLED = "CANCELLED"      # Superseded by a revision/resubmission
+    SUPERSEDED = "SUPERSEDED"    # Explicitly superseded by a new version
+
+
+class WorkflowStepStatus(str, enum.Enum):
+    """Status of a single step within a workflow instance."""
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    REVISION_REQUESTED = "REVISION_REQUESTED"
+    SKIPPED = "SKIPPED"
+
+
+class VenueRequestStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+
+
+class ResourceRequestStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    CONFIRMED = "CONFIRMED"
+    UNAVAILABLE = "UNAVAILABLE"
+
+
+class BudgetLineItemCategory(str, enum.Enum):
+    VENUE = "VENUE"
+    CATERING = "CATERING"
+    MATERIALS = "MATERIALS"
+    PRINTING = "PRINTING"
+    TRANSPORT = "TRANSPORT"
+    HONORARIUM = "HONORARIUM"
+    DECORATION = "DECORATION"
+    TECHNOLOGY = "TECHNOLOGY"
+    OTHER = "OTHER"
+
+
+class ResourceType(str, enum.Enum):
+    CHAIRS = "CHAIRS"
+    TABLES = "TABLES"
+    PODIUM = "PODIUM"
+    LAPTOP = "LAPTOP"
+    PROJECTOR = "PROJECTOR"
+    CAMERA = "CAMERA"
+    GENERATOR = "GENERATOR"
+    MICROPHONE = "MICROPHONE"
+    BANNER_STANDEE = "BANNER_STANDEE"
+    OTHER = "OTHER"
+
+
+class DocumentType(str, enum.Enum):
+    EVENT_PLAN = "EVENT_PLAN"
+    BUDGET_DETAILS = "BUDGET_DETAILS"
+    AUTHORITY_LETTER = "AUTHORITY_LETTER"
+    CHIEF_GUEST_PROFILE = "CHIEF_GUEST_PROFILE"
+    VENUE_LAYOUT = "VENUE_LAYOUT"
+    SUPPORTING = "SUPPORTING"
+    OTHER = "OTHER"
+
+
+class NotificationType(str, enum.Enum):
+    PROPOSAL_SUBMITTED = "PROPOSAL_SUBMITTED"
+    APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
+    PROPOSAL_APPROVED = "PROPOSAL_APPROVED"
+    PROPOSAL_REJECTED = "PROPOSAL_REJECTED"
+    REVISION_REQUESTED = "REVISION_REQUESTED"
+    HALL_CONFLICT = "HALL_CONFLICT"
+    FINANCE_VERIFICATION_REQUIRED = "FINANCE_VERIFICATION_REQUIRED"
+    BUDGET_VERIFIED = "BUDGET_VERIFIED"
+    BUDGET_QUERIED = "BUDGET_QUERIED"
+    SYSTEM = "SYSTEM"
+
+
+class AuditAction(str, enum.Enum):
+    # Auth
+    LOGIN = "LOGIN"
+    LOGOUT = "LOGOUT"
+    FAILED_LOGIN = "FAILED_LOGIN"
+    ACCOUNT_LOCKED = "ACCOUNT_LOCKED"
+    PASSWORD_RESET_REQUESTED = "PASSWORD_RESET_REQUESTED"
+    PASSWORD_RESET_COMPLETED = "PASSWORD_RESET_COMPLETED"
+    EMAIL_VERIFIED = "EMAIL_VERIFIED"
+    # User management
+    USER_CREATED = "USER_CREATED"
+    USER_UPDATED = "USER_UPDATED"
+    USER_DEACTIVATED = "USER_DEACTIVATED"
+    USER_ACTIVATED = "USER_ACTIVATED"
+    ROLE_CHANGED = "ROLE_CHANGED"
+    # Club
+    CLUB_CREATED = "CLUB_CREATED"
+    CLUB_UPDATED = "CLUB_UPDATED"
+    CLUB_DEACTIVATED = "CLUB_DEACTIVATED"
+    MEMBER_ADDED = "MEMBER_ADDED"
+    MEMBER_REMOVED = "MEMBER_REMOVED"
+    ADVISOR_ASSIGNED = "ADVISOR_ASSIGNED"
+    # EventRequest
+    PROPOSAL_CREATED = "PROPOSAL_CREATED"
+    PROPOSAL_UPDATED = "PROPOSAL_UPDATED"
+    PROPOSAL_SUBMITTED = "PROPOSAL_SUBMITTED"
+    PROPOSAL_APPROVED = "PROPOSAL_APPROVED"
+    PROPOSAL_REJECTED = "PROPOSAL_REJECTED"
+    REVISION_REQUESTED = "REVISION_REQUESTED"
+    PROPOSAL_CANCELLED = "PROPOSAL_CANCELLED"
+    REVISION_RESUBMITTED = "REVISION_RESUBMITTED"
+    # Hall
+    HALL_CREATED = "HALL_CREATED"
+    HALL_UPDATED = "HALL_UPDATED"
+    HALL_BOOKED = "HALL_BOOKED"
+    HALL_RELEASED = "HALL_RELEASED"
+    # Document
+    FILE_UPLOADED = "FILE_UPLOADED"
+    FILE_DELETED = "FILE_DELETED"
+    FILE_DOWNLOADED = "FILE_DOWNLOADED"
+    # Finance
+    BUDGET_VERIFIED = "BUDGET_VERIFIED"
+    BUDGET_QUERIED = "BUDGET_QUERIED"
+    # Workflow
+    WORKFLOW_TEMPLATE_CREATED = "WORKFLOW_TEMPLATE_CREATED"
+    WORKFLOW_TEMPLATE_UPDATED = "WORKFLOW_TEMPLATE_UPDATED"
+    # Event
+    EVENT_CREATED = "EVENT_CREATED"
+    EVENT_STATUS_CHANGED = "EVENT_STATUS_CHANGED"
+
+
+class FinanceVerificationStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    VERIFIED = "VERIFIED"
+    QUERIED = "QUERIED"

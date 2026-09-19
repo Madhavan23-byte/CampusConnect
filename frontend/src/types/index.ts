@@ -1,0 +1,328 @@
+/**
+ * CampusConnect — Core TypeScript Types
+ * Mirrors the backend domain models and API response shapes.
+ * Keep in sync with backend Pydantic schemas.
+ */
+
+// ---------------------------------------------------------------------------
+// Enums (must match backend exactly)
+// ---------------------------------------------------------------------------
+export type UserRole =
+  | 'SYSTEM_ADMIN'
+  | 'CLUB_SECRETARY'
+  | 'FACULTY_ADVISOR'
+  | 'HALL_INCHARGE'
+  | 'ADVISOR_STUDENTS_UNION'
+  | 'DEAN_STUDENT_AFFAIRS'
+  | 'PRINCIPAL'
+  | 'FINANCE_OFFICER'
+
+export type ClubMemberRole = 'SECRETARY' | 'TREASURER' | 'MEMBER'
+
+export type EventType =
+  | 'CULTURAL'
+  | 'TECHNICAL'
+  | 'SPORTS'
+  | 'WORKSHOP'
+  | 'SEMINAR'
+  | 'GUEST_LECTURE'
+  | 'COMPETITION'
+  | 'OUTREACH'
+  | 'OTHER'
+
+export type EventRequestStatus =
+  | 'DRAFT'
+  | 'SUBMITTED'
+  | 'IN_REVIEW'
+  | 'REVISION_REQUIRED'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'CANCELLED'
+
+export type EventStatus = 'SCHEDULED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'ARCHIVED'
+
+export type WorkflowStepStatus =
+  | 'PENDING'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'REVISION_REQUESTED'
+  | 'SKIPPED'
+
+export type NotificationType =
+  | 'PROPOSAL_SUBMITTED'
+  | 'APPROVAL_REQUIRED'
+  | 'PROPOSAL_APPROVED'
+  | 'PROPOSAL_REJECTED'
+  | 'REVISION_REQUESTED'
+  | 'HALL_CONFLICT'
+  | 'FINANCE_VERIFICATION_REQUIRED'
+  | 'BUDGET_VERIFIED'
+  | 'BUDGET_QUERIED'
+  | 'SYSTEM'
+
+export type DocumentType =
+  | 'EVENT_PLAN'
+  | 'BUDGET_DETAILS'
+  | 'AUTHORITY_LETTER'
+  | 'CHIEF_GUEST_PROFILE'
+  | 'VENUE_LAYOUT'
+  | 'SUPPORTING'
+  | 'OTHER'
+
+export type FinanceVerificationStatus = 'PENDING' | 'VERIFIED' | 'QUERIED'
+
+// ---------------------------------------------------------------------------
+// Domain types
+// ---------------------------------------------------------------------------
+export interface User {
+  id: string
+  email: string
+  full_name: string
+  role: UserRole
+  is_active: boolean
+  email_verified: boolean
+  department?: string
+  designation?: string
+  phone?: string
+  last_login_at?: string
+  created_at: string
+}
+
+export interface Club {
+  id: string
+  name: string
+  slug: string
+  description?: string
+  faculty_advisor_id?: string
+  faculty_advisor?: User
+  academic_year: string
+  is_active: boolean
+  logo_url?: string
+  member_count?: number
+  created_at: string
+}
+
+export interface ClubMember {
+  id: string
+  club_id: string
+  user_id: string
+  user: User
+  member_role: ClubMemberRole
+  is_active: boolean
+  joined_at: string
+}
+
+export interface Hall {
+  id: string
+  name: string
+  location?: string
+  capacity: number
+  available_facilities: string[]
+  is_active: boolean
+  notes?: string
+}
+
+export interface VenueRequest {
+  id: string
+  hall_id: string
+  hall?: Hall
+  requested_date: string
+  start_time: string
+  end_time: string
+  expected_audience?: number
+  requires_stage: boolean
+  requires_audio: boolean
+  requires_lcd: boolean
+  requires_ac: boolean
+  requires_projector: boolean
+  additional_requirements?: string
+  status: 'PENDING' | 'APPROVED' | 'REJECTED'
+  rejection_reason?: string
+}
+
+export interface BudgetLineItem {
+  id: string
+  description: string
+  category: string
+  estimated_amount: number
+  notes?: string
+}
+
+export interface BudgetProposal {
+  id: string
+  expected_income: number
+  institute_contribution: number
+  total_expected_expenditure: number
+  notes?: string
+  finance_status: FinanceVerificationStatus
+  finance_notes?: string
+  line_items: BudgetLineItem[]
+}
+
+export interface ResourceRequest {
+  id: string
+  resource_type: string
+  quantity: number
+  notes?: string
+  status: 'PENDING' | 'CONFIRMED' | 'UNAVAILABLE'
+}
+
+export interface Document {
+  id: string
+  document_type: DocumentType
+  original_filename: string
+  file_size_bytes: number
+  mime_type: string
+  is_active: boolean
+  uploaded_by: string
+  uploader?: User
+  created_at: string
+}
+
+export interface WorkflowInstanceStep {
+  id: string
+  step_order: number
+  step_name: string
+  assigned_to: string
+  assignee?: User
+  status: WorkflowStepStatus
+  action_taken_at?: string
+  comments?: string
+  version_reviewed?: number
+}
+
+export interface WorkflowInstance {
+  id: string
+  current_step_order: number
+  status: string
+  version_number: number
+  steps: WorkflowInstanceStep[]
+}
+
+export interface EventRequestVersion {
+  id: string
+  version_number: number
+  submitted_at: string
+  submitted_by: string
+  submitter?: User
+  change_summary?: string
+}
+
+export interface EventRequest {
+  id: string
+  club_id: string
+  club?: Club
+  submitted_by: string
+  submitted_by_user?: User
+  title: string
+  description?: string
+  event_type: EventType
+  expected_attendees?: number
+  event_date?: string
+  chief_guest_name?: string
+  chief_guest_designation?: string
+  chief_guest_institution?: string
+  status: EventRequestStatus
+  current_version: number
+  academic_year: string
+  venue_request?: VenueRequest
+  budget_proposal?: BudgetProposal
+  resource_requests: ResourceRequest[]
+  documents: Document[]
+  workflow_instance?: WorkflowInstance
+  versions: EventRequestVersion[]
+  created_at: string
+  updated_at: string
+}
+
+export interface Event {
+  id: string
+  event_request_id: string
+  club_id: string
+  club?: Club
+  hall_id?: string
+  hall?: Hall
+  title: string
+  description?: string
+  event_type: EventType
+  event_date: string
+  start_time: string
+  end_time: string
+  expected_attendees?: number
+  status: EventStatus
+  academic_year: string
+  created_at: string
+}
+
+export interface Notification {
+  id: string
+  notification_type: NotificationType
+  title: string
+  message: string
+  is_read: boolean
+  read_at?: string
+  event_request_id?: string
+  event_request?: Pick<EventRequest, 'id' | 'title' | 'status'>
+  created_at: string
+}
+
+export interface AuditLogEntry {
+  id: string
+  actor_email?: string
+  actor_role?: string
+  action: string
+  entity_type: string
+  entity_id?: string
+  previous_state?: Record<string, unknown>
+  new_state?: Record<string, unknown>
+  reason?: string
+  ip_address?: string
+  created_at: string
+}
+
+// ---------------------------------------------------------------------------
+// API Response wrappers
+// ---------------------------------------------------------------------------
+export interface PaginatedResponse<T> {
+  items: T[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+}
+
+export interface ApiError {
+  error: string
+  message: string
+  detail?: unknown
+}
+
+// ---------------------------------------------------------------------------
+// Auth types
+// ---------------------------------------------------------------------------
+export interface AuthTokens {
+  access_token: string
+  token_type: 'bearer'
+}
+
+export interface LoginRequest {
+  email: string
+  password: string
+}
+
+export interface RegisterRequest {
+  email: string
+  full_name: string
+  password: string
+  role?: UserRole
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard types
+// ---------------------------------------------------------------------------
+export interface DashboardSummary {
+  role: UserRole
+  stats: Record<string, number>
+  pending_actions: number
+  recent_activity: AuditLogEntry[]
+}
