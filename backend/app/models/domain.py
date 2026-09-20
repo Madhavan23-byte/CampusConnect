@@ -38,18 +38,25 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 from app.models.enums import (
     ActualExpenseStatus,
+    ActualIncomeStatus,
     AuditAction,
     BudgetLineItemCategory,
+    CashAdvanceStatus,
     ClubMemberRole,
     DocumentType,
     EventRequestStatus,
     EventStatus,
     EventType,
     FinanceVerificationStatus,
+    IncomeSourceType,
     NotificationType,
+    PaymentMethod,
     PostEventReportStatus,
     ResourceRequestStatus,
     ResourceType,
+    SettlementPaymentType,
+    SettlementStatus,
+    SettlementType,
     UserRole,
     VenueRequestStatus,
     WorkflowInstanceStatus,
@@ -735,6 +742,12 @@ class Document(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     actual_expenses: Mapped[list["ActualExpense"]] = relationship(
         "ActualExpense", back_populates="bill_document"
     )
+    actual_incomes: Mapped[list["ActualIncome"]] = relationship(
+        "ActualIncome", back_populates="evidence_document"
+    )
+    settlement_payments: Mapped[list["SettlementPayment"]] = relationship(
+        "SettlementPayment", back_populates="proof_document"
+    )
 
     __table_args__ = (
         CheckConstraint("file_size_bytes > 0", name="ck_documents_file_size_positive"),
@@ -976,6 +989,15 @@ class Event(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     )
     actual_expenses: Mapped[list["ActualExpense"]] = relationship(
         "ActualExpense", back_populates="event", cascade="all, delete-orphan"
+    )
+    cash_advance: Mapped["CashAdvance | None"] = relationship(
+        "CashAdvance", back_populates="event", uselist=False, cascade="all, delete-orphan"
+    )
+    actual_incomes: Mapped[list["ActualIncome"]] = relationship(
+        "ActualIncome", back_populates="event", cascade="all, delete-orphan"
+    )
+    financial_settlement: Mapped["FinancialSettlement | None"] = relationship(
+        "FinancialSettlement", back_populates="event", uselist=False, cascade="all, delete-orphan"
     )
 
     __table_args__ = (
@@ -1259,3 +1281,399 @@ class ActualExpense(Base, UUIDPrimaryKeyMixin, TimestampMixin):
             name="chk_actual_expenses_verified_le_claimed",
         ),
     )
+
+# ============================================================================
+# PHASE 2.3 FINANCIAL SETTLEMENT, CASH ADVANCE & ACTUAL INCOME MODELS
+# ============================================================================
+
+
+class CashAdvance(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """
+    Cash advance requisition and disbursement for a confirmed event.
+    Phase 2.3 Rule: At most one advance record per event (1:0..1).
+    Constraint: 0 <= amount_disbursed <= amount_approved.
+    Disbursed amount ceiling (<= sanctioned_grant) is enforced at the service layer.
+    """
+
+    __tablename__ = "cash_advances"
+
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("events.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    amount_requested: Mapped[Decimal] = mapped_column(
+        Numeric(precision=12, scale=2), nullable=False
+    )
+    amount_approved: Mapped[Decimal | None] = mapped_column(
+        Numeric(precision=12, scale=2), nullable=True
+    )
+    amount_disbursed: Mapped[Decimal] = mapped_column(
+        Numeric(precision=12, scale=2), default=Decimal("0.00"), nullable=False
+    )
+    status: Mapped[CashAdvanceStatus] = mapped_column(
+        String(20), default=CashAdvanceStatus.REQUESTED, nullable=False, index=True
+    )
+    recipient_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    disbursed_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    disbursement_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    payment_reference: Mapped[str | None] = mapped_column(
+        String(100), nullable=True
+    )
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Relationships
+    event: Mapped["Event"] = relationship("Event", back_populates="cash_advance")
+    recipient: Mapped["User"] = relationship("User", foreign_keys=[recipient_id])
+    approver: Mapped["User | None"] = relationship("User", foreign_keys=[approved_by])
+    disburser: Mapped["User | None"] = relationship("User", foreign_keys=[disbursed_by])
+
+    __table_args__ = (
+        CheckConstraint("amount_requested > 0.00", name="chk_cash_advances_requested_positive"),
+        CheckConstraint(
+            "amount_approved IS NULL OR amount_approved >= 0.00",
+            name="chk_cash_advances_approved_non_negative",
+        ),
+        CheckConstraint(
+            "amount_disbursed >= 0.00",
+            name="chk_cash_advances_disbursed_non_negative",
+        ),
+        CheckConstraint(
+            "amount_approved IS NULL OR amount_disbursed <= amount_approved",
+            name="chk_cash_advances_disbursed_le_approved",
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<CashAdvance id={self.id} event_id={self.event_id} "
+            f"status={self.status} disbursed={self.amount_disbursed}>"
+        )
+
+
+class ActualIncome(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """
+    Self-generated revenue record for an event (registration fees, sponsorships, etc.).
+    Phase 2.3: Every income entry requires supporting document evidence.
+    Document type: DocumentType.INCOME_EVIDENCE.
+    Only VERIFIED income contributes to settlement actual income (I_actual).
+    """
+
+    __tablename__ = "actual_incomes"
+
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("events.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    source_type: Mapped[IncomeSourceType] = mapped_column(
+        String(30), nullable=False
+    )
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    payer_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(
+        Numeric(precision=12, scale=2), nullable=False
+    )
+    received_date: Mapped[date] = mapped_column(Date, nullable=False)
+    reference_number: Mapped[str | None] = mapped_column(
+        String(100), nullable=True
+    )
+    evidence_document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id"), nullable=False, index=True
+    )
+    status: Mapped[ActualIncomeStatus] = mapped_column(
+        String(20), default=ActualIncomeStatus.RECORDED, nullable=False, index=True
+    )
+    recorded_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    verified_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    finance_remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Relationships
+    event: Mapped["Event"] = relationship("Event", back_populates="actual_incomes")
+    evidence_document: Mapped["Document"] = relationship(
+        "Document", foreign_keys=[evidence_document_id], back_populates="actual_incomes"
+    )
+    recorder: Mapped["User"] = relationship("User", foreign_keys=[recorded_by])
+    verifier: Mapped["User | None"] = relationship("User", foreign_keys=[verified_by])
+
+    __table_args__ = (
+        CheckConstraint("amount > 0.00", name="chk_actual_incomes_amount_positive"),
+        Index("ix_actual_incomes_event_id_status", "event_id", "status"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<ActualIncome id={self.id} event_id={self.event_id} "
+            f"amount={self.amount} status={self.status}>"
+        )
+
+
+class FinancialSettlement(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """
+    Final institutional reconciliation and settlement for a completed event.
+    Snapshots sanctioned financial values and locks server-authoritative calculations.
+    Relationship: Event 1 : 1 FinancialSettlement (unique event_id).
+    """
+
+    __tablename__ = "financial_settlements"
+
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("events.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    approved_version_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("event_request_versions.id"), nullable=False
+    )
+
+    # Immutable Financial Snapshots captured at settlement preparation
+    sanctioned_grant: Mapped[Decimal] = mapped_column(
+        Numeric(precision=12, scale=2), nullable=False
+    )
+    sanctioned_expenditure: Mapped[Decimal] = mapped_column(
+        Numeric(precision=12, scale=2), nullable=False
+    )
+    expected_income: Mapped[Decimal] = mapped_column(
+        Numeric(precision=12, scale=2), default=Decimal("0.00"), nullable=False
+    )
+
+    # Calculated Snapshot Values (Server Authoritative)
+    total_claimed_expenditure: Mapped[Decimal] = mapped_column(
+        Numeric(precision=12, scale=2), default=Decimal("0.00"), nullable=False
+    )
+    total_verified_expenditure: Mapped[Decimal] = mapped_column(
+        Numeric(precision=12, scale=2), default=Decimal("0.00"), nullable=False
+    )
+    total_disallowed_expenditure: Mapped[Decimal] = mapped_column(
+        Numeric(precision=12, scale=2), default=Decimal("0.00"), nullable=False
+    )
+    total_verified_income: Mapped[Decimal] = mapped_column(
+        Numeric(precision=12, scale=2), default=Decimal("0.00"), nullable=False
+    )
+    net_deficit: Mapped[Decimal] = mapped_column(
+        Numeric(precision=12, scale=2), default=Decimal("0.00"), nullable=False
+    )
+    institutional_payout: Mapped[Decimal] = mapped_column(
+        Numeric(precision=12, scale=2), default=Decimal("0.00"), nullable=False
+    )
+    cash_advance_disbursed: Mapped[Decimal] = mapped_column(
+        Numeric(precision=12, scale=2), default=Decimal("0.00"), nullable=False
+    )
+    settlement_balance: Mapped[Decimal] = mapped_column(
+        Numeric(precision=12, scale=2), default=Decimal("0.00"), nullable=False
+    )
+    reimbursement_due: Mapped[Decimal] = mapped_column(
+        Numeric(precision=12, scale=2), default=Decimal("0.00"), nullable=False
+    )
+    refund_due: Mapped[Decimal] = mapped_column(
+        Numeric(precision=12, scale=2), default=Decimal("0.00"), nullable=False
+    )
+    settlement_type: Mapped[SettlementType] = mapped_column(
+        String(30), nullable=False
+    )
+    status: Mapped[SettlementStatus] = mapped_column(
+        String(30), default=SettlementStatus.DRAFT, nullable=False, index=True
+    )
+
+    # Audit / Operational Tracking
+    prepared_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    submitted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    audited_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    audited_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    finance_remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+    query_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Relationships
+    event: Mapped["Event"] = relationship("Event", back_populates="financial_settlement")
+    approved_version: Mapped["EventRequestVersion"] = relationship(
+        "EventRequestVersion", foreign_keys=[approved_version_id]
+    )
+    preparer: Mapped["User"] = relationship("User", foreign_keys=[prepared_by])
+    auditor: Mapped["User | None"] = relationship("User", foreign_keys=[audited_by])
+    payments: Mapped[list["SettlementPayment"]] = relationship(
+        "SettlementPayment",
+        back_populates="settlement",
+        cascade="all, delete-orphan",
+        order_by="SettlementPayment.created_at",
+    )
+    revisions: Mapped[list["SettlementRevision"]] = relationship(
+        "SettlementRevision",
+        back_populates="settlement",
+        cascade="all, delete-orphan",
+        order_by="SettlementRevision.revision_number",
+    )
+
+    __table_args__ = (
+        CheckConstraint("sanctioned_grant >= 0.00", name="chk_fin_settlements_grant_non_negative"),
+        CheckConstraint(
+            "sanctioned_expenditure >= 0.00",
+            name="chk_fin_settlements_exp_non_negative",
+        ),
+        CheckConstraint(
+            "total_verified_expenditure >= 0.00",
+            name="chk_fin_settlements_v_exp_non_negative",
+        ),
+        CheckConstraint(
+            "total_verified_income >= 0.00",
+            name="chk_fin_settlements_v_inc_non_negative",
+        ),
+        CheckConstraint(
+            "institutional_payout >= 0.00",
+            name="chk_fin_settlements_payout_non_negative",
+        ),
+        CheckConstraint(
+            "cash_advance_disbursed >= 0.00",
+            name="chk_fin_settlements_advance_non_negative",
+        ),
+        CheckConstraint(
+            "reimbursement_due >= 0.00",
+            name="chk_fin_settlements_reimb_non_negative",
+        ),
+        CheckConstraint(
+            "refund_due >= 0.00",
+            name="chk_fin_settlements_refund_non_negative",
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<FinancialSettlement id={self.id} event_id={self.event_id} "
+            f"status={self.status} balance={self.settlement_balance}>"
+        )
+
+
+class SettlementPayment(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """
+    Record of an actual financial payment/receipt against a financial settlement.
+    Types: REIMBURSEMENT_DISBURSEMENT (College -> Club) or ADVANCE_REFUND_RECEIPT (Club -> College).
+    Proof document is mandatory (DocumentType.SETTLEMENT_PAYMENT_PROOF).
+    """
+
+    __tablename__ = "settlement_payments"
+
+    settlement_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("financial_settlements.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    payment_type: Mapped[SettlementPaymentType] = mapped_column(
+        String(30), nullable=False
+    )
+    amount: Mapped[Decimal] = mapped_column(
+        Numeric(precision=12, scale=2), nullable=False
+    )
+    payment_method: Mapped[PaymentMethod] = mapped_column(
+        String(30), nullable=False
+    )
+    transaction_reference: Mapped[str] = mapped_column(
+        String(100), nullable=False, index=True
+    )
+    transaction_date: Mapped[date] = mapped_column(Date, nullable=False)
+    proof_document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id"), nullable=False, index=True
+    )
+    recorded_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Relationships
+    settlement: Mapped["FinancialSettlement"] = relationship(
+        "FinancialSettlement", back_populates="payments"
+    )
+    proof_document: Mapped["Document"] = relationship(
+        "Document", foreign_keys=[proof_document_id], back_populates="settlement_payments"
+    )
+    recorder: Mapped["User"] = relationship("User", foreign_keys=[recorded_by])
+
+    __table_args__ = (
+        CheckConstraint("amount > 0.00", name="chk_settlement_payments_amount_positive"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<SettlementPayment id={self.id} settlement_id={self.settlement_id} "
+            f"type={self.payment_type} amount={self.amount}>"
+        )
+
+
+class SettlementRevision(Base, UUIDPrimaryKeyMixin):
+    """
+    Immutable audit snapshot created prior to reopening an approved or
+    settled settlement.
+    Captures full JSON serialization of the settlement and all associated payments.
+    """
+
+    __tablename__ = "settlement_revisions"
+
+    settlement_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("financial_settlements.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    snapshot_data: Mapped[dict[str, Any]] = mapped_column(
+        JSONType, nullable=False
+    )
+    reopened_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    reopening_reason: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    # Relationships
+    settlement: Mapped["FinancialSettlement"] = relationship(
+        "FinancialSettlement", back_populates="revisions"
+    )
+    reopener: Mapped["User"] = relationship("User", foreign_keys=[reopened_by])
+
+    __table_args__ = (
+        UniqueConstraint(
+            "settlement_id", "revision_number", name="uq_settlement_revisions_number"
+        ),
+        CheckConstraint(
+            "revision_number >= 1", name="chk_settlement_revisions_number_positive"
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<SettlementRevision id={self.id} settlement_id={self.settlement_id} "
+            f"rev={self.revision_number}>"
+        )
