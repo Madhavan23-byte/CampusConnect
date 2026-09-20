@@ -39,7 +39,7 @@ export type EventRequestStatus =
   | 'REJECTED'
   | 'CANCELLED'
 
-export type EventStatus = 'SCHEDULED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'ARCHIVED'
+export type EventStatus = 'SCHEDULED' | 'IN_PROGRESS' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'ARCHIVED'
 
 export type WorkflowStepStatus =
   | 'PENDING'
@@ -67,6 +67,7 @@ export type DocumentType =
   | 'CHIEF_GUEST_PROFILE'
   | 'VENUE_LAYOUT'
   | 'SUPPORTING'
+  | 'POST_EVENT_PHOTO'
   | 'OTHER'
 
 export type FinanceVerificationStatus = 'PENDING' | 'VERIFIED' | 'QUERIED'
@@ -325,4 +326,81 @@ export interface DashboardSummary {
   stats: Record<string, number>
   pending_actions: number
   recent_activity: AuditLogEntry[]
+}
+
+
+export type PostEventReportStatus = 'DRAFT' | 'SUBMITTED' | 'REVISION_REQUIRED' | 'CERTIFIED'
+
+export interface PostEventReport {
+  id: string
+  event_id: string
+  revision_number: number
+  actual_attendance: number
+  summary: string
+  objectives_achieved: string
+  outcomes?: string | null
+  challenges?: string | null
+  status: PostEventReportStatus
+  submitted_by: string
+  submitted_at: string
+  certified_by?: string | null
+  certified_at?: string | null
+  certification_remarks?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface PostEventReportCreate {
+  actual_attendance: number
+  summary: string
+  objectives_achieved: string
+  outcomes?: string
+  challenges?: string
+}
+
+export interface PostEventReportUpdate {
+  actual_attendance?: number
+  summary?: string
+  objectives_achieved?: string
+  outcomes?: string
+  challenges?: string
+}
+
+export interface PostEventReportCertify {
+  remarks?: string
+}
+
+export interface PostEventReportRevisionRequest {
+  remarks: string
+}
+
+export interface ConfirmedEvent {
+  id: string
+  event_request_id: string
+  title: string
+  description?: string | null
+  event_type: EventType
+  event_date: string
+  start_time: string
+  end_time: string
+  expected_attendees?: number | null
+  status: EventStatus
+  club_id: string
+  hall_id?: string | null
+  post_event_report?: PostEventReport | null
+  created_at: string
+}
+
+export interface EvidenceDocument {
+  id: string
+  event_id: string
+  uploaded_by: string
+  document_type: DocumentType
+  original_filename: string
+  mime_type: string
+  file_size_bytes: number
+  geo_latitude?: number | null
+  geo_longitude?: number | null
+  geo_source?: string | null
+  created_at: string
 }

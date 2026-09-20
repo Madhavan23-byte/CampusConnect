@@ -7,6 +7,9 @@ import type {
   Hall,
   Document as EventDocument,
   ResourceRequest,
+  ConfirmedEvent,
+  PostEventReport,
+  EvidenceDocument,
 } from '@/types'
 import {
   ArrowLeft,
@@ -26,6 +29,13 @@ import {
   Loader2,
   AlertCircle,
   Plus,
+  Play,
+  Award,
+  MapPin,
+  Camera,
+  RotateCcw,
+  Check,
+  ArrowRight,
 } from 'lucide-react'
 
 export const EventDetailPage: React.FC = () => {
@@ -37,7 +47,33 @@ export const EventDetailPage: React.FC = () => {
   const [documents, setDocuments] = useState<EventDocument[]>([])
   const [resources, setResources] = useState<ResourceRequest[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'overview' | 'venue' | 'budget' | 'documents' | 'resources'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'venue' | 'budget' | 'documents' | 'resources' | 'execution'>('overview')
+
+  // Execution & Post-Event Report state (Phase 2.1)
+  const [confirmedEvent, setConfirmedEvent] = useState<ConfirmedEvent | null>(null)
+  const [postEventReport, setPostEventReport] = useState<PostEventReport | null>(null)
+  const [evidenceList, setEvidenceList] = useState<EvidenceDocument[]>([])
+  const [executingAction, setExecutingAction] = useState(false)
+
+  // Report form state
+  const [reportForm, setReportForm] = useState({
+    actual_attendance: 0,
+    summary: '',
+    objectives_achieved: '',
+    outcomes: '',
+    challenges: '',
+  })
+
+  // Certification / Revision remarks
+  const [certifyRemarks, setCertifyRemarks] = useState('')
+  const [revisionRemarks, setRevisionRemarks] = useState('')
+  const [showRevisionBox, setShowRevisionBox] = useState(false)
+
+  // Evidence upload state
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null)
+  const [evidenceLatitude, setEvidenceLatitude] = useState('')
+  const [evidenceLongitude, setEvidenceLongitude] = useState('')
+  const [uploadingEvidence, setUploadingEvidence] = useState(false)
 
   const [submittingWorkflow, setSubmittingWorkflow] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
@@ -128,6 +164,34 @@ export const EventDetailPage: React.FC = () => {
           institute_contribution: evRes.data.budget_proposal.institute_contribution || 0,
           notes: evRes.data.budget_proposal.notes || '',
         })
+      }
+
+      // Load confirmed event execution details when proposal is APPROVED
+      if (evRes.data.status === 'APPROVED') {
+        try {
+          const [confRes, evdRes] = await Promise.all([
+            apiClient.get<ConfirmedEvent>(`/events/${id}/confirmed`).catch(() => null),
+            apiClient.get<EvidenceDocument[]>(`/events/${id}/evidence`).catch(() => ({ data: [] as EvidenceDocument[] })),
+          ])
+          if (confRes && confRes.data) {
+            setConfirmedEvent(confRes.data)
+            if (confRes.data.post_event_report) {
+              setPostEventReport(confRes.data.post_event_report)
+              setReportForm({
+                actual_attendance: confRes.data.post_event_report.actual_attendance || 0,
+                summary: confRes.data.post_event_report.summary || '',
+                objectives_achieved: confRes.data.post_event_report.objectives_achieved || '',
+                outcomes: confRes.data.post_event_report.outcomes || '',
+                challenges: confRes.data.post_event_report.challenges || '',
+              })
+            }
+          }
+          if (evdRes && evdRes.data) {
+            setEvidenceList(evdRes.data)
+          }
+        } catch {
+          // non-blocking
+        }
       }
     } catch {
       setMessage({ type: 'error', text: 'Failed to load event details.' })
@@ -311,6 +375,188 @@ export const EventDetailPage: React.FC = () => {
       const e = err as { response?: { data?: { message?: string } } }
       setMessage({ type: 'error', text: e.response?.data?.message || 'Failed to delete resource.' })
     }
+  }
+
+
+  // Execution & Certification Actions (Phase 2.1)
+  const isAssignedAdvisor =
+    user?.role === 'FACULTY_ADVISOR' &&
+    (event?.club?.faculty_advisor_id === user?.id || user?.id === event?.club?.faculty_advisor?.id)
+
+  const handleStartEvent = async () => {
+    setExecutingAction(true)
+    try {
+      await apiClient.post(`/events/${id}/start`)
+      setMessage({ type: 'success', text: 'Event execution started. Status: IN_PROGRESS.' })
+      await loadAll()
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } }
+      setMessage({ type: 'error', text: e.response?.data?.message || 'Failed to start event execution.' })
+    } finally {
+      setExecutingAction(false)
+    }
+  }
+
+  const handleSubmitReport = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (reportForm.actual_attendance <= 0) {
+      setMessage({ type: 'error', text: 'Actual attendance must be greater than 0.' })
+      return
+    }
+    if (reportForm.summary.trim().length < 20) {
+      setMessage({ type: 'error', text: 'Summary must be at least 20 characters.' })
+      return
+    }
+    if (reportForm.objectives_achieved.trim().length < 5) {
+      setMessage({ type: 'error', text: 'Objectives achieved must be at least 5 characters.' })
+      return
+    }
+
+    setExecutingAction(true)
+    try {
+      await apiClient.post(`/events/${id}/complete`, {
+        actual_attendance: Number(reportForm.actual_attendance),
+        summary: reportForm.summary.trim(),
+        objectives_achieved: reportForm.objectives_achieved.trim(),
+        outcomes: reportForm.outcomes.trim() || undefined,
+        challenges: reportForm.challenges.trim() || undefined,
+      })
+      setMessage({
+        type: 'success',
+        text: 'Event completed and Post-Event Report submitted for Faculty Advisor certification.',
+      })
+      await loadAll()
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } }
+      setMessage({ type: 'error', text: e.response?.data?.message || 'Failed to submit report.' })
+    } finally {
+      setExecutingAction(false)
+    }
+  }
+
+  const handleResubmitReport = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (reportForm.actual_attendance <= 0) {
+      setMessage({ type: 'error', text: 'Actual attendance must be greater than 0.' })
+      return
+    }
+    if (reportForm.summary.trim().length < 20) {
+      setMessage({ type: 'error', text: 'Summary must be at least 20 characters.' })
+      return
+    }
+
+    setExecutingAction(true)
+    try {
+      await apiClient.patch(`/events/${id}/post-event-report`, {
+        actual_attendance: Number(reportForm.actual_attendance),
+        summary: reportForm.summary.trim(),
+        objectives_achieved: reportForm.objectives_achieved.trim(),
+        outcomes: reportForm.outcomes.trim() || undefined,
+        challenges: reportForm.challenges.trim() || undefined,
+      })
+      await apiClient.post(`/events/${id}/post-event-report/resubmit`)
+      setMessage({
+        type: 'success',
+        text: 'Post-event report amended and resubmitted for Faculty Advisor certification.',
+      })
+      await loadAll()
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } }
+      setMessage({ type: 'error', text: e.response?.data?.message || 'Failed to resubmit report.' })
+    } finally {
+      setExecutingAction(false)
+    }
+  }
+
+  const handleCertifyReport = async () => {
+    setExecutingAction(true)
+    try {
+      await apiClient.post(`/events/${id}/post-event-report/certify`, {
+        remarks: certifyRemarks.trim() || undefined,
+      })
+      setMessage({ type: 'success', text: 'Event delivery formally certified.' })
+      setCertifyRemarks('')
+      await loadAll()
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } }
+      setMessage({ type: 'error', text: e.response?.data?.message || 'Certification failed.' })
+    } finally {
+      setExecutingAction(false)
+    }
+  }
+
+  const handleRequestRevision = async () => {
+    if (revisionRemarks.trim().length < 5) {
+      setMessage({ type: 'error', text: 'Revision remarks must be at least 5 characters.' })
+      return
+    }
+    setExecutingAction(true)
+    try {
+      await apiClient.post(`/events/${id}/post-event-report/revise`, {
+        remarks: revisionRemarks.trim(),
+      })
+      setMessage({ type: 'success', text: 'Revision requested from Club Secretary.' })
+      setRevisionRemarks('')
+      setShowRevisionBox(false)
+      await loadAll()
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } }
+      setMessage({ type: 'error', text: e.response?.data?.message || 'Failed to request revision.' })
+    } finally {
+      setExecutingAction(false)
+    }
+  }
+
+  const handleUploadEvidence = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!evidenceFile) {
+      setMessage({ type: 'error', text: 'Please select a photo or evidence file.' })
+      return
+    }
+
+    setUploadingEvidence(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', evidenceFile)
+      if (evidenceLatitude.trim()) {
+        formData.append('geo_latitude', evidenceLatitude.trim())
+      }
+      if (evidenceLongitude.trim()) {
+        formData.append('geo_longitude', evidenceLongitude.trim())
+      }
+      formData.append('geo_source', 'CLIENT_DECLARED_GPS')
+
+      await apiClient.post(`/events/${id}/evidence`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      setMessage({ type: 'success', text: 'Evidence uploaded successfully.' })
+      setEvidenceFile(null)
+      setEvidenceLatitude('')
+      setEvidenceLongitude('')
+      await loadAll()
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } }
+      setMessage({ type: 'error', text: e.response?.data?.message || 'Evidence upload failed.' })
+    } finally {
+      setUploadingEvidence(false)
+    }
+  }
+
+  const captureGPS = () => {
+    if (!navigator.geolocation) {
+      setMessage({ type: 'error', text: 'Geolocation is not supported by your browser.' })
+      return
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setEvidenceLatitude(pos.coords.latitude.toFixed(6))
+        setEvidenceLongitude(pos.coords.longitude.toFixed(6))
+        setMessage({ type: 'success', text: 'GPS coordinates captured from device.' })
+      },
+      () => {
+        setMessage({ type: 'error', text: 'Failed to retrieve GPS location.' })
+      }
+    )
   }
 
   if (loading) {
@@ -528,11 +774,63 @@ export const EventDetailPage: React.FC = () => {
         >
           <Layers className="w-4 h-4" /> Resources ({resources.length})
         </button>
+
+        {event.status === 'APPROVED' && (
+          <button
+            onClick={() => setActiveTab('execution')}
+            className={`px-4 py-2.5 border-b-2 flex items-center gap-2 font-bold ${
+              activeTab === 'execution'
+                ? 'border-primary-600 text-primary-600'
+                : 'border-transparent text-surface-500 hover:text-surface-800'
+            }`}
+          >
+            <Play className="w-4 h-4" /> Execution &amp; Report ({confirmedEvent?.status || 'SCHEDULED'})
+          </button>
+        )}
       </div>
 
       {/* Tab 1: Overview */}
       {activeTab === 'overview' && (
         <div className="card p-6 space-y-4">
+          {/* Confirmed Event Lifecycle Alert on Overview */}
+          {event.status === 'APPROVED' && (
+            <div className="p-4 bg-primary-50/70 border border-primary-200 rounded-xl flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-primary-100 text-primary-700 rounded-lg">
+                  <Play className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-bold text-surface-900">Event Proposal Confirmed &amp; Scheduled</h4>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                      confirmedEvent?.status === 'COMPLETED'
+                        ? 'bg-success-100 text-success-800'
+                        : confirmedEvent?.status === 'IN_PROGRESS'
+                        ? 'bg-amber-100 text-amber-800 animate-pulse'
+                        : 'bg-primary-100 text-primary-800'
+                    }`}>
+                      {confirmedEvent?.status || 'SCHEDULED'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-surface-600 mt-0.5">
+                    {confirmedEvent?.status === 'COMPLETED'
+                      ? 'Event execution concluded. Post-event report submitted.'
+                      : confirmedEvent?.status === 'IN_PROGRESS'
+                      ? 'Event execution is actively underway on campus.'
+                      : 'Scheduled for execution. Ready to commence on the scheduled date.'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab('execution')}
+                className="btn-primary text-xs flex items-center gap-1.5 px-3 py-1.5"
+              >
+                Manage Execution
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
           <div>
             <h3 className="text-xs font-semibold text-surface-500 uppercase">Event Description</h3>
             <p className="text-xs text-surface-800 mt-1 leading-relaxed">
@@ -1044,6 +1342,7 @@ export const EventDetailPage: React.FC = () => {
 
       {/* Tab 5: Resources */}
       {activeTab === 'resources' && (
+
         <div className="card p-6 space-y-6">
           <div>
             <h2 className="text-sm font-bold text-surface-900">Campus Infrastructure &amp; Logistics Declaration</h2>
@@ -1144,6 +1443,555 @@ export const EventDetailPage: React.FC = () => {
           )}
         </div>
       )}
+
+      {/* Tab 6: Execution & Post-Event Report (Phase 2.1) */}
+      {activeTab === 'execution' && (
+        <div className="space-y-6">
+          {/* Hero Execution Status Card */}
+          <div className="card p-6 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <span className="text-xs font-semibold text-surface-500 uppercase tracking-wider block">
+                  Confirmed Event Execution State
+                </span>
+                <h2 className="text-lg font-bold text-surface-900 mt-1 flex items-center gap-2">
+                  {confirmedEvent?.title || event.title}
+                  <span
+                    className={`px-3 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${
+                      confirmedEvent?.status === 'COMPLETED'
+                        ? 'bg-success-100 text-success-800'
+                        : confirmedEvent?.status === 'IN_PROGRESS'
+                        ? 'bg-amber-100 text-amber-800 animate-pulse'
+                        : 'bg-primary-100 text-primary-800'
+                    }`}
+                  >
+                    {confirmedEvent?.status || 'SCHEDULED'}
+                  </span>
+                </h2>
+              </div>
+
+              {/* Secretary Execution Controls */}
+              {isSecretary && confirmedEvent?.status === 'SCHEDULED' && (
+                <button
+                  type="button"
+                  onClick={handleStartEvent}
+                  disabled={executingAction}
+                  className="btn-primary flex items-center gap-2 px-4 py-2"
+                >
+                  {executingAction ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                  Start Event Execution
+                </button>
+              )}
+            </div>
+
+            {/* Execution Schedule Details */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-surface-200">
+              <div>
+                <span className="text-xs font-semibold text-surface-500 uppercase block">Execution Date</span>
+                <span className="text-sm font-medium text-surface-800">
+                  {confirmedEvent?.event_date
+                    ? new Date(confirmedEvent.event_date).toLocaleDateString()
+                    : event.event_date
+                    ? new Date(event.event_date).toLocaleDateString()
+                    : 'TBD'}
+                </span>
+              </div>
+              <div>
+                <span className="text-xs font-semibold text-surface-500 uppercase block">Scheduled Window</span>
+                <span className="text-sm font-medium text-surface-800">
+                  {confirmedEvent?.start_time
+                    ? `${new Date(confirmedEvent.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – ${new Date(confirmedEvent.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                    : 'TBD'}
+                </span>
+              </div>
+              <div>
+                <span className="text-xs font-semibold text-surface-500 uppercase block">Confirmed Venue</span>
+                <span className="text-sm font-medium text-surface-800">
+                  {confirmedEvent?.hall_id
+                    ? halls.find((h) => h.id === confirmedEvent.hall_id)?.name || 'Campus Hall'
+                    : 'Designated Campus Venue'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Post-Event Report Card */}
+          <div className="card p-6 space-y-6">
+            <div className="flex items-center justify-between border-b border-surface-200 pb-4">
+              <div>
+                <h3 className="text-base font-bold text-surface-900 flex items-center gap-2">
+                  <Award className="w-5 h-5 text-primary-600" />
+                  Post-Event Execution Report &amp; Delivery Certification
+                </h3>
+                <p className="text-xs text-surface-500 mt-0.5">
+                  Statutory interlock: Club Secretary submits delivery metrics, designated Faculty Advisor certifies delivery.
+                </p>
+              </div>
+
+              {postEventReport && (
+                <span
+                  className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+                    postEventReport.status === 'CERTIFIED'
+                      ? 'bg-success-100 text-success-800'
+                      : postEventReport.status === 'REVISION_REQUIRED'
+                      ? 'bg-amber-100 text-amber-800'
+                      : 'bg-primary-100 text-primary-800'
+                  }`}
+                >
+                  {postEventReport.status} (v{postEventReport.revision_number})
+                </span>
+              )}
+            </div>
+
+            {/* Case 1: No report yet & event is IN_PROGRESS (or SCHEDULED) */}
+            {(!postEventReport || postEventReport.status === 'DRAFT') && (
+              <div>
+                {isSecretary ? (
+                  <form onSubmit={handleSubmitReport} className="space-y-4">
+                    <div className="p-3 bg-surface-50 rounded-lg border border-surface-200 text-xs text-surface-600">
+                      Fill in the actual attendance count and outcomes to conclude this event. Submitting this form
+                      transitions the event to <strong>COMPLETED</strong> and sends the report to your Faculty Advisor for delivery certification.
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-surface-700 mb-1">
+                          Actual Attendance Count <span className="text-danger-500">*</span>
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          required
+                          value={reportForm.actual_attendance || ''}
+                          onChange={(e) => setReportForm({ ...reportForm, actual_attendance: Number(e.target.value) })}
+                          placeholder="e.g. 150"
+                          className="w-full px-3 py-2 text-xs rounded border border-surface-300 bg-white"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-surface-700 mb-1">
+                        Executive Summary of Event Execution <span className="text-danger-500">* (min 20 chars)</span>
+                      </label>
+                      <textarea
+                        required
+                        rows={3}
+                        value={reportForm.summary}
+                        onChange={(e) => setReportForm({ ...reportForm, summary: e.target.value })}
+                        placeholder="Comprehensive summary of activities, chief guests, highlights, and participant engagement..."
+                        className="w-full px-3 py-2 text-xs rounded border border-surface-300 bg-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-surface-700 mb-1">
+                        Objectives Achieved <span className="text-danger-500">* (min 5 chars)</span>
+                      </label>
+                      <textarea
+                        required
+                        rows={2}
+                        value={reportForm.objectives_achieved}
+                        onChange={(e) => setReportForm({ ...reportForm, objectives_achieved: e.target.value })}
+                        placeholder="Academic and practical objectives accomplished..."
+                        className="w-full px-3 py-2 text-xs rounded border border-surface-300 bg-white"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-surface-700 mb-1">
+                          Outcomes, Awards &amp; Feedback (Optional)
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={reportForm.outcomes}
+                          onChange={(e) => setReportForm({ ...reportForm, outcomes: e.target.value })}
+                          placeholder="Key takeaways, competition results, student feedback..."
+                          className="w-full px-3 py-2 text-xs rounded border border-surface-300 bg-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-surface-700 mb-1">
+                          Logistical Challenges Encountered (Optional)
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={reportForm.challenges}
+                          onChange={(e) => setReportForm({ ...reportForm, challenges: e.target.value })}
+                          placeholder="Weather, equipment, or schedule delays..."
+                          className="w-full px-3 py-2 text-xs rounded border border-surface-300 bg-white"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={executingAction}
+                      className="btn-primary text-xs px-4 py-2 flex items-center gap-2"
+                    >
+                      {executingAction ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                      Conclude Event &amp; Submit Post-Event Report
+                    </button>
+                  </form>
+                ) : (
+                  <p className="text-xs text-surface-500 py-6 text-center">
+                    The Club Secretary has not submitted the post-event report yet.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Case 2: Report is SUBMITTED or REVISION_REQUIRED or CERTIFIED */}
+            {postEventReport && postEventReport.status !== 'DRAFT' && (
+              <div className="space-y-6">
+                {/* Revision Required Alert */}
+                {postEventReport.status === 'REVISION_REQUIRED' && (
+                  <div className="p-4 bg-amber-50 border border-amber-300 rounded-xl space-y-2">
+                    <div className="flex items-center gap-2 text-amber-900 font-bold text-xs">
+                      <AlertTriangle className="w-4 h-4 text-amber-600" />
+                      Faculty Advisor Requested Revisions (v{postEventReport.revision_number})
+                    </div>
+                    <p className="text-xs text-amber-800 italic">
+                      "{postEventReport.certification_remarks || 'Please update report metrics and resubmit.'}"
+                    </p>
+                  </div>
+                )}
+
+                {/* Certified Alert */}
+                {postEventReport.status === 'CERTIFIED' && (
+                  <div className="p-4 bg-success-50 border border-success-300 rounded-xl space-y-2">
+                    <div className="flex items-center gap-2 text-success-900 font-bold text-xs">
+                      <CheckCircle2 className="w-4 h-4 text-success-600" />
+                      Statutory Delivery Certification Granted
+                    </div>
+                    <p className="text-xs text-success-800">
+                      Formally certified on{' '}
+                      {postEventReport.certified_at
+                        ? new Date(postEventReport.certified_at).toLocaleString()
+                        : 'Record'}
+                      .
+                      {postEventReport.certification_remarks && (
+                        <span className="block mt-1 italic">
+                          Remarks: "{postEventReport.certification_remarks}"
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                )}
+
+                {/* Report Details Display */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="p-4 bg-surface-50 rounded-lg border border-surface-200">
+                    <span className="text-[10px] font-bold text-surface-500 uppercase block">Actual Attendance</span>
+                    <span className="text-lg font-bold text-surface-900">
+                      {postEventReport.actual_attendance} attendees
+                    </span>
+                  </div>
+
+                  <div className="p-4 bg-surface-50 rounded-lg border border-surface-200">
+                    <span className="text-[10px] font-bold text-surface-500 uppercase block">Submission Version</span>
+                    <span className="text-lg font-bold text-surface-900">
+                      Version {postEventReport.revision_number}
+                    </span>
+                    <span className="text-xs text-surface-500 block mt-0.5">
+                      Submitted at {new Date(postEventReport.submitted_at).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-xs font-bold text-surface-700 uppercase">Executive Summary</h4>
+                    <p className="text-xs text-surface-800 mt-1 leading-relaxed whitespace-pre-wrap bg-surface-50 p-3 rounded-lg border border-surface-200">
+                      {postEventReport.summary}
+                    </p>
+                  </div>
+
+                  <div>
+                    <h4 className="text-xs font-bold text-surface-700 uppercase">Objectives Achieved</h4>
+                    <p className="text-xs text-surface-800 mt-1 leading-relaxed whitespace-pre-wrap bg-surface-50 p-3 rounded-lg border border-surface-200">
+                      {postEventReport.objectives_achieved}
+                    </p>
+                  </div>
+
+                  {postEventReport.outcomes && (
+                    <div>
+                      <h4 className="text-xs font-bold text-surface-700 uppercase">Outcomes &amp; Feedback</h4>
+                      <p className="text-xs text-surface-800 mt-1 leading-relaxed whitespace-pre-wrap bg-surface-50 p-3 rounded-lg border border-surface-200">
+                        {postEventReport.outcomes}
+                      </p>
+                    </div>
+                  )}
+
+                  {postEventReport.challenges && (
+                    <div>
+                      <h4 className="text-xs font-bold text-surface-700 uppercase">Challenges Encountered</h4>
+                      <p className="text-xs text-surface-800 mt-1 leading-relaxed whitespace-pre-wrap bg-surface-50 p-3 rounded-lg border border-surface-200">
+                        {postEventReport.challenges}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Faculty Advisor Certification Panel */}
+                {postEventReport.status === 'SUBMITTED' && isAssignedAdvisor && (
+                  <div className="p-5 bg-primary-50/50 border border-primary-200 rounded-xl space-y-4">
+                    <div className="flex items-center gap-2">
+                      <Award className="w-5 h-5 text-primary-600" />
+                      <h4 className="text-xs font-bold text-surface-900 uppercase tracking-wider">
+                        Faculty Advisor Statutory Delivery Certification
+                      </h4>
+                    </div>
+                    <p className="text-xs text-surface-600">
+                      As the designated Faculty Advisor, you are statutory guardian of club activities. Please verify
+                      that the event execution occurred as reported.
+                    </p>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-surface-700 mb-1">
+                        Certification Remarks (Optional for approval, mandatory for revision)
+                      </label>
+                      <input
+                        type="text"
+                        value={certifyRemarks}
+                        onChange={(e) => setCertifyRemarks(e.target.value)}
+                        placeholder="e.g. Verified event physical delivery and attendee roster."
+                        className="w-full px-3 py-2 text-xs rounded border border-surface-300 bg-white"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={handleCertifyReport}
+                        disabled={executingAction}
+                        className="btn-primary text-xs px-4 py-2 flex items-center gap-1.5 bg-success-600 hover:bg-success-700 border-success-600"
+                      >
+                        {executingAction ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                        Certify Event Delivery
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowRevisionBox(!showRevisionBox)}
+                        className="text-xs px-3 py-2 rounded border border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 flex items-center gap-1.5"
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                        Request Revision
+                      </button>
+                    </div>
+
+                    {showRevisionBox && (
+                      <div className="p-3 bg-amber-50 rounded-lg border border-amber-200 space-y-2 mt-2">
+                        <label className="block text-xs font-bold text-amber-900">
+                          Mandatory Revision Remarks (min 5 chars)
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={revisionRemarks}
+                          onChange={(e) => setRevisionRemarks(e.target.value)}
+                          placeholder="State what needs revision (e.g. participant breakdown or budget alignment)..."
+                          className="w-full px-3 py-2 text-xs rounded border border-amber-300 bg-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleRequestRevision}
+                          disabled={executingAction}
+                          className="text-xs px-3 py-1.5 rounded bg-amber-600 text-white font-semibold hover:bg-amber-700"
+                        >
+                          Send Revision Request
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Secretary Resubmission Form when REVISION_REQUIRED */}
+                {postEventReport.status === 'REVISION_REQUIRED' && isSecretary && (
+                  <form onSubmit={handleResubmitReport} className="p-5 bg-surface-50 border border-surface-200 rounded-xl space-y-4">
+                    <h4 className="text-xs font-bold text-surface-900 uppercase tracking-wider flex items-center gap-2">
+                      <RotateCcw className="w-4 h-4 text-primary-600" />
+                      Amend &amp; Resubmit Report (v{postEventReport.revision_number + 1})
+                    </h4>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-surface-700 mb-1">Actual Attendance</label>
+                        <input
+                          type="number"
+                          min="1"
+                          required
+                          value={reportForm.actual_attendance}
+                          onChange={(e) => setReportForm({ ...reportForm, actual_attendance: Number(e.target.value) })}
+                          className="w-full px-3 py-2 text-xs rounded border border-surface-300 bg-white"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-surface-700 mb-1">Executive Summary (min 20 chars)</label>
+                      <textarea
+                        required
+                        rows={3}
+                        value={reportForm.summary}
+                        onChange={(e) => setReportForm({ ...reportForm, summary: e.target.value })}
+                        className="w-full px-3 py-2 text-xs rounded border border-surface-300 bg-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-surface-700 mb-1">Objectives Achieved (min 5 chars)</label>
+                      <textarea
+                        required
+                        rows={2}
+                        value={reportForm.objectives_achieved}
+                        onChange={(e) => setReportForm({ ...reportForm, objectives_achieved: e.target.value })}
+                        className="w-full px-3 py-2 text-xs rounded border border-surface-300 bg-white"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={executingAction}
+                      className="btn-primary text-xs px-4 py-2 flex items-center gap-2"
+                    >
+                      {executingAction ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                      Save Amendments &amp; Resubmit (v{postEventReport.revision_number + 1})
+                    </button>
+                  </form>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Photographic & Documentary Evidence Section */}
+          <div className="card p-6 space-y-6">
+            <div className="flex items-center justify-between border-b border-surface-200 pb-4">
+              <div>
+                <h3 className="text-base font-bold text-surface-900 flex items-center gap-2">
+                  <Camera className="w-5 h-5 text-primary-600" />
+                  Post-Event Photographic Evidence &amp; Geolocation
+                </h3>
+                <p className="text-xs text-surface-500 mt-0.5">
+                  Securely stored event photos with unverified client-declared GPS metadata for audit trails.
+                </p>
+              </div>
+            </div>
+
+            {/* Evidence Upload Form for Secretary */}
+            {isSecretary && confirmedEvent && confirmedEvent.status !== 'SCHEDULED' && (
+              <form onSubmit={handleUploadEvidence} className="p-4 bg-surface-50 rounded-xl border border-surface-200 space-y-4">
+                <span className="text-xs font-bold text-surface-800 block">Upload Photographic Evidence</span>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-surface-600 mb-1">
+                      File (.png, .jpg, .pdf)
+                    </label>
+                    <input
+                      type="file"
+                      required
+                      accept=".png,.jpg,.jpeg,.pdf"
+                      onChange={(e) => setEvidenceFile(e.target.files?.[0] || null)}
+                      className="w-full text-xs text-surface-600 file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:bg-primary-50 file:text-primary-700"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-surface-600 mb-1">
+                      Latitude (Decimal)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 12.971598"
+                      value={evidenceLatitude}
+                      onChange={(e) => setEvidenceLatitude(e.target.value)}
+                      className="w-full px-3 py-1.5 text-xs rounded border border-surface-300 bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-surface-600 mb-1">
+                      Longitude (Decimal)
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="e.g. 77.594562"
+                        value={evidenceLongitude}
+                        onChange={(e) => setEvidenceLongitude(e.target.value)}
+                        className="w-full px-3 py-1.5 text-xs rounded border border-surface-300 bg-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={captureGPS}
+                        title="Capture device GPS"
+                        className="px-2.5 py-1.5 rounded border border-surface-300 bg-white text-surface-700 hover:bg-surface-100"
+                      >
+                        <MapPin className="w-4 h-4 text-primary-600" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                  <span className="text-[10px] text-surface-400 italic">
+                    Coordinates are recorded as unverified client-declared GPS metadata.
+                  </span>
+                  <button
+                    type="submit"
+                    disabled={uploadingEvidence}
+                    className="btn-primary text-xs px-4 py-1.5 flex items-center gap-1.5"
+                  >
+                    {uploadingEvidence ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                    Upload Evidence
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* Evidence Gallery */}
+            {evidenceList.length === 0 ? (
+              <p className="text-xs text-surface-400 py-6 text-center">
+                No photographic or documentary evidence uploaded yet.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {evidenceList.map((doc) => (
+                  <div
+                    key={doc.id}
+                    className="p-4 rounded-lg border border-surface-200 bg-white space-y-2 flex flex-col justify-between"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <Camera className="w-4 h-4 text-primary-600" />
+                        <p className="text-xs font-bold text-surface-800 truncate" title={doc.original_filename}>
+                          {doc.original_filename}
+                        </p>
+                      </div>
+                      <span className="text-[10px] text-surface-500 block">
+                        {(doc.file_size_bytes / 1024).toFixed(1)} KB  {new Date(doc.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+
+                    {doc.geo_latitude && doc.geo_longitude && (
+                      <div className="pt-2 border-t border-surface-100 flex items-center gap-1.5 text-[10px] text-surface-600">
+                        <MapPin className="w-3 h-3 text-primary-500 flex-shrink-0" />
+                        <span className="truncate">
+                          GPS: {Number(doc.geo_latitude).toFixed(4)}, {Number(doc.geo_longitude).toFixed(4)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }

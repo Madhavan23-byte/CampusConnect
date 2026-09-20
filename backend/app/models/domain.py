@@ -48,6 +48,7 @@ from app.models.enums import (
     EventType,
     FinanceVerificationStatus,
     NotificationType,
+    PostEventReportStatus,
     ResourceRequestStatus,
     ResourceType,
     UserRole,
@@ -138,7 +139,6 @@ class RefreshToken(Base, UUIDPrimaryKeyMixin):
 
     @property
     def is_valid(self) -> bool:
-
         return self.revoked_at is None and self.expires_at > datetime.now(UTC)
 
 
@@ -712,6 +712,18 @@ class Document(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # Relative path within storage root (never absolute, never user-controlled)
     storage_path: Mapped[str] = mapped_column(String(500), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Optional association with confirmed event for post-event evidence
+    event_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("events.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    # Optional unverified client-declared or EXIF geo coordinates
+    geo_latitude: Mapped[Decimal | None] = mapped_column(
+        Numeric(precision=9, scale=6), nullable=True
+    )
+    geo_longitude: Mapped[Decimal | None] = mapped_column(
+        Numeric(precision=9, scale=6), nullable=True
+    )
+    geo_source: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     # Relationships
     event_request: Mapped["EventRequest"] = relationship("EventRequest", back_populates="documents")
@@ -952,6 +964,9 @@ class Event(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     )
     club: Mapped["Club"] = relationship("Club")
     hall: Mapped["Hall | None"] = relationship("Hall")
+    post_event_report: Mapped["PostEventReport | None"] = relationship(
+        "PostEventReport", back_populates="event", uselist=False, cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         Index("ix_events_club_id_status", "club_id", "status"),
@@ -1085,3 +1100,53 @@ class IdempotencyRecord(Base, UUIDPrimaryKeyMixin):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     __table_args__ = (Index("ix_idempotency_records_expires_at", "expires_at"),)
+
+
+# ============================================================================
+# POST-EVENT REPORT (PHASE 2.1)
+# ============================================================================
+
+
+class PostEventReport(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """
+    Post-event execution report submitted by Club Secretary and certified by Faculty Advisor.
+    Preserves revision tracking and immutable snapshot history.
+    """
+
+    __tablename__ = "post_event_reports"
+
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("events.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    revision_number: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    actual_attendance: Mapped[int] = mapped_column(Integer, nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    objectives_achieved: Mapped[str] = mapped_column(Text, nullable=False)
+    outcomes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    challenges: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[PostEventReportStatus] = mapped_column(
+        String(30), default=PostEventReportStatus.SUBMITTED, nullable=False, index=True
+    )
+    submitted_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    certified_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    certified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    certification_remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Relationships
+    event: Mapped["Event"] = relationship("Event", back_populates="post_event_report")
+    submitter: Mapped["User"] = relationship("User", foreign_keys=[submitted_by])
+    certifier: Mapped["User"] = relationship("User", foreign_keys=[certified_by])
+
+    __table_args__ = (
+        CheckConstraint("actual_attendance > 0", name="ck_post_event_reports_attendance_positive"),
+        CheckConstraint("revision_number >= 1", name="ck_post_event_reports_revision_positive"),
+    )

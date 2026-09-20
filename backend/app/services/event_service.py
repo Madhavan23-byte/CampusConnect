@@ -574,37 +574,22 @@ class EventService:
         vr = await db.scalar(vr_stmt)
 
         hall_id = booking.hall_id if booking else (vr.hall_id if vr and vr.hall_id else None)
+        default_dt = event.event_date if event.event_date else event.created_at
         event_date = (
             booking.booking_date
             if booking
-            else (
-                vr.requested_date
-                if vr and vr.requested_date
-                else (approved_version.proposed_datetime if approved_version else event.created_at)
-            )
+            else (vr.requested_date if vr and vr.requested_date else default_dt)
         )
         start_time = (
             booking.start_time
             if booking
-            else (
-                vr.start_time
-                if vr and vr.start_time
-                else (approved_version.proposed_datetime if approved_version else event.created_at)
-            )
+            else (vr.start_time if vr and vr.start_time else default_dt)
         )
         end_time = (
-            booking.end_time
-            if booking
-            else (
-                vr.end_time
-                if vr and vr.end_time
-                else (approved_version.proposed_datetime if approved_version else event.created_at)
-            )
+            booking.end_time if booking else (vr.end_time if vr and vr.end_time else default_dt)
         )
         snapshot = (
-            approved_version.snapshot
-            if (approved_version and approved_version.snapshot)
-            else {}
+            approved_version.snapshot if (approved_version and approved_version.snapshot) else {}
         )
         title = snapshot.get("title") or event.title or "Confirmed Event"
         description = snapshot.get("description") or event.description
