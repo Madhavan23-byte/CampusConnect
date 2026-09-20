@@ -7,6 +7,7 @@ represent specific institutional responsibilities without implicit hierarchical
 inheritance (e.g. Principal does not implicitly possess Club Secretary or Finance
 actions).
 """
+
 import enum
 from collections.abc import Mapping
 
@@ -60,13 +61,11 @@ ROLE_PERMISSIONS: Mapping[Permission, frozenset[UserRole]] = {
     Permission.CLUB_UPDATE: frozenset({UserRole.CLUB_SECRETARY, UserRole.SYSTEM_ADMIN}),
     Permission.CLUB_MANAGE_MEMBERS: frozenset({UserRole.CLUB_SECRETARY, UserRole.SYSTEM_ADMIN}),
     Permission.CLUB_VIEW_ANY: frozenset(UserRole),  # All authenticated roles can view
-
     # Events
     Permission.EVENT_PROPOSE: frozenset({UserRole.CLUB_SECRETARY}),
     Permission.EVENT_EDIT_DRAFT: frozenset({UserRole.CLUB_SECRETARY}),
     Permission.EVENT_CANCEL: frozenset({UserRole.CLUB_SECRETARY, UserRole.SYSTEM_ADMIN}),
     Permission.EVENT_VIEW_ALL: frozenset(UserRole),
-
     # Approval chain steps
     Permission.APPROVAL_FACULTY_REVIEW: frozenset({UserRole.FACULTY_ADVISOR}),
     Permission.APPROVAL_HALL_REVIEW: frozenset({UserRole.HALL_INCHARGE}),
@@ -74,22 +73,21 @@ ROLE_PERMISSIONS: Mapping[Permission, frozenset[UserRole]] = {
     Permission.APPROVAL_DEAN_REVIEW: frozenset({UserRole.DEAN_STUDENT_AFFAIRS}),
     Permission.APPROVAL_PRINCIPAL_REVIEW: frozenset({UserRole.PRINCIPAL}),
     Permission.APPROVAL_FINANCE_REVIEW: frozenset({UserRole.FINANCE_OFFICER}),
-
     # Halls
     Permission.HALL_CREATE: frozenset({UserRole.SYSTEM_ADMIN}),
     Permission.HALL_UPDATE: frozenset({UserRole.HALL_INCHARGE, UserRole.SYSTEM_ADMIN}),
     Permission.HALL_OVERRIDE_BOOKING: frozenset({UserRole.HALL_INCHARGE, UserRole.PRINCIPAL}),
-
     # Finance
     Permission.BUDGET_APPROVE: frozenset({UserRole.FINANCE_OFFICER, UserRole.PRINCIPAL}),
     Permission.FINANCIAL_SETTLEMENT: frozenset({UserRole.FINANCE_OFFICER}),
-
     # System
     Permission.SYSTEM_CONFIG: frozenset({UserRole.SYSTEM_ADMIN}),
     Permission.USER_MANAGE: frozenset({UserRole.SYSTEM_ADMIN}),
-    Permission.AUDIT_LOG_VIEW: frozenset({
-        UserRole.SYSTEM_ADMIN,
-        UserRole.PRINCIPAL,
-        UserRole.DEAN_STUDENT_AFFAIRS,
-    }),
+    Permission.AUDIT_LOG_VIEW: frozenset(
+        {
+            UserRole.SYSTEM_ADMIN,
+            UserRole.PRINCIPAL,
+            UserRole.DEAN_STUDENT_AFFAIRS,
+        }
+    ),
 }

@@ -7,6 +7,7 @@ Routes:
 - GET    /api/v1/halls/{id}             : Retrieve hall details
 - GET    /api/v1/halls/{id}/availability: Check bookings & availability for a date/time
 """
+
 import uuid
 from datetime import datetime
 from typing import Annotated

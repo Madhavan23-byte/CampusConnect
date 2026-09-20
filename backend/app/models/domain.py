@@ -11,19 +11,20 @@ CRITICAL DESIGN NOTES:
 - JSONB used only for true schema-less data (snapshots, facility lists)
 - Decimal/Numeric for all financial amounts (never Float)
 """
+
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
     Integer,
-    JSON,
     Numeric,
     String,
     Text,
@@ -137,11 +138,8 @@ class RefreshToken(Base, UUIDPrimaryKeyMixin):
 
     @property
     def is_valid(self) -> bool:
-        from datetime import timezone
-        return (
-            self.revoked_at is None
-            and self.expires_at > datetime.now(timezone.utc)
-        )
+
+        return self.revoked_at is None and self.expires_at > datetime.now(UTC)
 
 
 # ============================================================================
@@ -296,9 +294,7 @@ class Hall(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         "HallBookingConfirmed", back_populates="hall"
     )
 
-    __table_args__ = (
-        CheckConstraint("capacity > 0", name="ck_halls_capacity_positive"),
-    )
+    __table_args__ = (CheckConstraint("capacity > 0", name="ck_halls_capacity_positive"),)
 
     def __repr__(self) -> str:
         return f"<Hall id={self.id} name={self.name} capacity={self.capacity}>"
@@ -398,7 +394,9 @@ class EventRequest(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     # FK to the active workflow instance (set on submission)
     workflow_instance_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("workflow_instances.id", use_alter=True, name="fk_event_requests_workflow_instance_id"),
+        ForeignKey(
+            "workflow_instances.id", use_alter=True, name="fk_event_requests_workflow_instance_id"
+        ),
         nullable=True,
     )
 
@@ -408,7 +406,9 @@ class EventRequest(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         "User", back_populates="event_requests_submitted", foreign_keys=[submitted_by]
     )
     versions: Mapped[list["EventRequestVersion"]] = relationship(
-        "EventRequestVersion", back_populates="event_request", order_by="EventRequestVersion.version_number"
+        "EventRequestVersion",
+        back_populates="event_request",
+        order_by="EventRequestVersion.version_number",
     )
     venue_request: Mapped["VenueRequest | None"] = relationship(
         "VenueRequest", back_populates="event_request", uselist=False
@@ -419,9 +419,7 @@ class EventRequest(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     resource_requests: Mapped[list["ResourceRequest"]] = relationship(
         "ResourceRequest", back_populates="event_request"
     )
-    documents: Mapped[list["Document"]] = relationship(
-        "Document", back_populates="event_request"
-    )
+    documents: Mapped[list["Document"]] = relationship("Document", back_populates="event_request")
     workflow_instances: Mapped[list["WorkflowInstance"]] = relationship(
         "WorkflowInstance",
         back_populates="event_request",
@@ -483,9 +481,7 @@ class EventRequestVersion(Base, UUIDPrimaryKeyMixin):
     change_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Relationships
-    event_request: Mapped["EventRequest"] = relationship(
-        "EventRequest", back_populates="versions"
-    )
+    event_request: Mapped["EventRequest"] = relationship("EventRequest", back_populates="versions")
     submitter: Mapped["User"] = relationship("User", foreign_keys=[submitted_by])
 
     __table_args__ = (
@@ -607,9 +603,7 @@ class BudgetProposal(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
 
     __table_args__ = (
-        CheckConstraint(
-            "expected_income >= 0", name="ck_budget_proposals_income_non_negative"
-        ),
+        CheckConstraint("expected_income >= 0", name="ck_budget_proposals_income_non_negative"),
         CheckConstraint(
             "institute_contribution >= 0",
             name="ck_budget_proposals_contribution_non_negative",
@@ -645,9 +639,7 @@ class BudgetLineItem(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
 
     __table_args__ = (
-        CheckConstraint(
-            "estimated_amount >= 0", name="ck_budget_line_items_amount_non_negative"
-        ),
+        CheckConstraint("estimated_amount >= 0", name="ck_budget_line_items_amount_non_negative"),
     )
 
 
@@ -722,9 +714,7 @@ class Document(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # Relationships
-    event_request: Mapped["EventRequest"] = relationship(
-        "EventRequest", back_populates="documents"
-    )
+    event_request: Mapped["EventRequest"] = relationship("EventRequest", back_populates="documents")
     uploader: Mapped["User"] = relationship("User", foreign_keys=[uploaded_by])
 
     __table_args__ = (
@@ -802,9 +792,7 @@ class WorkflowTemplateStep(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Relationships
-    template: Mapped["WorkflowTemplate"] = relationship(
-        "WorkflowTemplate", back_populates="steps"
-    )
+    template: Mapped["WorkflowTemplate"] = relationship("WorkflowTemplate", back_populates="steps")
     assigned_user: Mapped["User | None"] = relationship("User", foreign_keys=[assigned_user_id])
 
     __table_args__ = (
@@ -836,7 +824,9 @@ class WorkflowInstance(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     status: Mapped[WorkflowInstanceStatus] = mapped_column(
         String(20), default=WorkflowInstanceStatus.IN_PROGRESS, nullable=False
     )
-    version_number: Mapped[int] = mapped_column(Integer, nullable=False)  # Matches EventRequestVersion
+    version_number: Mapped[int] = mapped_column(
+        Integer, nullable=False
+    )  # Matches EventRequestVersion
 
     # Relationships
     template: Mapped["WorkflowTemplate"] = relationship(
@@ -893,9 +883,7 @@ class WorkflowInstanceStep(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     step_version_lock: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     # Relationships
-    instance: Mapped["WorkflowInstance"] = relationship(
-        "WorkflowInstance", back_populates="steps"
-    )
+    instance: Mapped["WorkflowInstance"] = relationship("WorkflowInstance", back_populates="steps")
     assignee: Mapped["User"] = relationship("User", foreign_keys=[assigned_to])
     template_step: Mapped["WorkflowTemplateStep"] = relationship(
         "WorkflowTemplateStep", foreign_keys=[template_step_id]
@@ -958,9 +946,7 @@ class Event(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     )
 
     # Relationships
-    event_request: Mapped["EventRequest"] = relationship(
-        "EventRequest", back_populates="event"
-    )
+    event_request: Mapped["EventRequest"] = relationship("EventRequest", back_populates="event")
     approved_version: Mapped["EventRequestVersion"] = relationship(
         "EventRequestVersion", foreign_keys=[approved_version_id]
     )

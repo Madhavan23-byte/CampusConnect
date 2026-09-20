@@ -8,6 +8,7 @@ Routes:
 - POST /api/v1/auth/logout: Revoke refresh token & clear cookie
 - GET  /api/v1/auth/me: Retrieve current authenticated user profile
 """
+
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response, status

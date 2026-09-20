@@ -3,9 +3,9 @@ CampusConnect Backend — Core Settings
 All configuration is loaded from environment variables.
 Never hard-code secrets or business rules here.
 """
-import json
+
 from functools import lru_cache
-from typing import Any, Literal, Union
+from typing import Literal
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -31,7 +31,9 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------ #
     # Database
     # ------------------------------------------------------------------ #
-    DATABASE_URL: str = "postgresql+asyncpg://campusconnect:campusconnect@localhost:5432/campusconnect"
+    DATABASE_URL: str = (
+        "postgresql+asyncpg://campusconnect:campusconnect@localhost:5432/campusconnect"
+    )
     DATABASE_POOL_SIZE: int = 10
     DATABASE_MAX_OVERFLOW: int = 20
 
@@ -40,6 +42,7 @@ class Settings(BaseSettings):
     def DATABASE_URL_SYNC(self) -> str:
         try:
             import psycopg  # noqa: F401
+
             driver = "postgresql+psycopg://"
         except ImportError:
             driver = "postgresql+psycopg2://"

@@ -27,16 +27,17 @@ Encapsulates all domain logic for college club management:
    - Membership reactivation support
    - Transactionally consistent audit logging (MEMBER_ADDED, MEMBER_REMOVED)
 """
+
 import re
 import unicodedata
 import uuid
 from typing import Any
 
 from sqlalchemy import func, inspect, select
-from sqlalchemy.orm.base import NO_VALUE
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.base import NO_VALUE
 
 from app.core.exceptions import (
     BadRequestError,
@@ -313,13 +314,13 @@ class ClubService:
             await db.refresh(club)
         except IntegrityError as exc:
             await db.rollback()
-            raise ConflictError("A club with this name or slug already exists in the system.") from exc
+            raise ConflictError(
+                "A club with this name or slug already exists in the system."
+            ) from exc
 
         # Eagerly load advisor relationship for serialization
         club_loaded = await db.scalar(
-            select(Club)
-            .options(selectinload(Club.faculty_advisor))
-            .where(Club.id == club.id)
+            select(Club).options(selectinload(Club.faculty_advisor)).where(Club.id == club.id)
         )
         return club_loaded or club
 
@@ -384,7 +385,10 @@ class ClubService:
         advisor_assigned = False
         new_advisor: User | None = None
 
-        if club_in.faculty_advisor_id is not None and club_in.faculty_advisor_id != club.faculty_advisor_id:
+        if (
+            club_in.faculty_advisor_id is not None
+            and club_in.faculty_advisor_id != club.faculty_advisor_id
+        ):
             new_advisor = await cls.validate_faculty_advisor(db, club_in.faculty_advisor_id)
             club.faculty_advisor_id = new_advisor.id
             advisor_assigned = True
@@ -506,7 +510,9 @@ class ClubService:
 
         if existing:
             if existing.is_active:
-                raise ConflictError(f"User '{target_user.email}' is already an active member of this club.")
+                raise ConflictError(
+                    f"User '{target_user.email}' is already an active member of this club."
+                )
             # Reactivate soft-deactivated membership
             existing.is_active = True
             existing.member_role = member_in.member_role
@@ -589,7 +595,9 @@ class ClubService:
             raise NotFoundError("Club member record was not found.")
 
         prev_role_str = (
-            member.member_role.value if hasattr(member.member_role, "value") else str(member.member_role)
+            member.member_role.value
+            if hasattr(member.member_role, "value")
+            else str(member.member_role)
         )
         prev_state = {
             "member_role": prev_role_str,
@@ -602,7 +610,9 @@ class ClubService:
             member.is_active = member_in.is_active
 
         new_role_str = (
-            member.member_role.value if hasattr(member.member_role, "value") else str(member.member_role)
+            member.member_role.value
+            if hasattr(member.member_role, "value")
+            else str(member.member_role)
         )
         new_state = {
             "member_role": new_role_str,
@@ -689,9 +699,7 @@ class ClubService:
         db: AsyncSession, club_id: uuid.UUID, include_inactive: bool = False
     ) -> list[ClubMember]:
         """List members of a club. By default returns active members."""
-        club = await db.scalar(
-            select(Club).where(Club.id == club_id, Club.deleted_at.is_(None))
-        )
+        club = await db.scalar(select(Club).where(Club.id == club_id, Club.deleted_at.is_(None)))
         if not club:
             raise NotFoundError(f"Club with ID '{club_id}' not found.")
 

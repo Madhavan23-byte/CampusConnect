@@ -11,6 +11,7 @@ Routes:
 - PATCH  /api/v1/clubs/{id}/members/{uid} : Update member role (CLUB_MANAGE_MEMBERS + ownership)
 - DELETE /api/v1/clubs/{id}/members/{uid} : Remove/deactivate member (CLUB_MANAGE_MEMBERS + ownership)
 """
+
 import uuid
 from typing import Annotated
 

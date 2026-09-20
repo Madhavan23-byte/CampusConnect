@@ -7,13 +7,14 @@ Request and response validation models for:
 - Token responses & payloads
 - Password validation rules
 """
+
 import re
 import uuid
 from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.models.enums import UserRole
-
 
 # ---------------------------------------------------------------------------
 # Password Validation Utility

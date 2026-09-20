@@ -3,6 +3,7 @@ CampusConnect — Enumerations
 All domain enums used across models and schemas.
 Stored as PostgreSQL native ENUM types for DB-level validation.
 """
+
 import enum
 
 
@@ -11,6 +12,7 @@ class UserRole(str, enum.Enum):
     System-level roles determining what a user can do.
     Keep role names stable — changing them requires a migration.
     """
+
     SYSTEM_ADMIN = "SYSTEM_ADMIN"
     CLUB_SECRETARY = "CLUB_SECRETARY"
     FACULTY_ADVISOR = "FACULTY_ADVISOR"
@@ -23,6 +25,7 @@ class UserRole(str, enum.Enum):
 
 class ClubMemberRole(str, enum.Enum):
     """Role of a user within a specific club (metadata, not system permission)."""
+
     SECRETARY = "SECRETARY"
     TREASURER = "TREASURER"
     MEMBER = "MEMBER"
@@ -30,6 +33,7 @@ class ClubMemberRole(str, enum.Enum):
 
 class EventType(str, enum.Enum):
     """Category of event. Used to select the appropriate approval workflow template."""
+
     CULTURAL = "CULTURAL"
     TECHNICAL = "TECHNICAL"
     SPORTS = "SPORTS"
@@ -46,6 +50,7 @@ class EventRequestStatus(str, enum.Enum):
     Lifecycle states of an EventRequest (proposal).
     State transitions are enforced by the approval service.
     """
+
     DRAFT = "DRAFT"
     SUBMITTED = "SUBMITTED"
     IN_REVIEW = "IN_REVIEW"
@@ -57,6 +62,7 @@ class EventRequestStatus(str, enum.Enum):
 
 class EventStatus(str, enum.Enum):
     """Lifecycle states of a confirmed Event (created from approved EventRequest)."""
+
     SCHEDULED = "SCHEDULED"
     ACTIVE = "ACTIVE"
     COMPLETED = "COMPLETED"
@@ -66,15 +72,17 @@ class EventStatus(str, enum.Enum):
 
 class WorkflowInstanceStatus(str, enum.Enum):
     """Status of an approval workflow instance."""
+
     IN_PROGRESS = "IN_PROGRESS"
     COMPLETED = "COMPLETED"
     REJECTED = "REJECTED"
-    CANCELLED = "CANCELLED"      # Superseded by a revision/resubmission
-    SUPERSEDED = "SUPERSEDED"    # Explicitly superseded by a new version
+    CANCELLED = "CANCELLED"  # Superseded by a revision/resubmission
+    SUPERSEDED = "SUPERSEDED"  # Explicitly superseded by a new version
 
 
 class WorkflowStepStatus(str, enum.Enum):
     """Status of a single step within a workflow instance."""
+
     PENDING = "PENDING"
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
@@ -132,9 +140,12 @@ class DocumentType(str, enum.Enum):
 class NotificationType(str, enum.Enum):
     PROPOSAL_SUBMITTED = "PROPOSAL_SUBMITTED"
     APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
+    ACTION_REQUIRED = "ACTION_REQUIRED"
+    STEP_APPROVED = "STEP_APPROVED"
     PROPOSAL_APPROVED = "PROPOSAL_APPROVED"
     PROPOSAL_REJECTED = "PROPOSAL_REJECTED"
     REVISION_REQUESTED = "REVISION_REQUESTED"
+    REVISION_REQUIRED = "REVISION_REQUIRED"
     HALL_CONFLICT = "HALL_CONFLICT"
     FINANCE_VERIFICATION_REQUIRED = "FINANCE_VERIFICATION_REQUIRED"
     BUDGET_VERIFIED = "BUDGET_VERIFIED"

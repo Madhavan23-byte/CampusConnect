@@ -49,6 +49,7 @@ from app.models.enums import (
     AuditAction,
     EventRequestStatus,
     FinanceVerificationStatus,
+    NotificationType,
     UserRole,
     VenueRequestStatus,
     WorkflowInstanceStatus,
@@ -59,6 +60,7 @@ from app.schemas.workflow import (
     WorkflowPendingItemResponse,
     WorkflowStepResponse,
 )
+from app.services.notification_service import NotificationService
 
 
 def _get_required_role_name(step: WorkflowInstanceStep) -> str:
@@ -305,9 +307,7 @@ class WorkflowService:
                             None,
                         )
                         assigned_user_id = (
-                            fa_user.id
-                            if fa_user
-                            else (admin_user.id if admin_user else actor.id)
+                            fa_user.id if fa_user else (admin_user.id if admin_user else actor.id)
                         )
                 else:
                     role_user = next(
@@ -336,8 +336,27 @@ class WorkflowService:
 
         # Link to event
         event.workflow_instance_id = instance_id
-
         await db.flush()
+
+        # Notify Step 1 assignee: ACTION_REQUIRED
+        first_step_stmt = select(WorkflowInstanceStep).where(
+            WorkflowInstanceStep.instance_id == instance_id,
+            WorkflowInstanceStep.step_order == 1,
+        )
+        first_step = await db.scalar(first_step_stmt)
+        if first_step and first_step.assigned_to:
+            await NotificationService.create_notification(
+                db=db,
+                recipient_id=first_step.assigned_to,
+                notification_type=NotificationType.ACTION_REQUIRED,
+                title=f"Action Required: Proposal '{event.title}' submitted",
+                message=(
+                    f"Event proposal '{event.title}' has been submitted and awaits your review "
+                    f"as Step 1 ({first_step.step_name})."
+                ),
+                event_request_id=event.id,
+            )
+
         return instance
 
     # ------------------------------------------------------------------
@@ -405,9 +424,7 @@ class WorkflowService:
         # legitimately holding the required institutional role may act.
         is_assigned = step.assigned_to == actor.id
         is_role_match = (
-            step.template_step.required_role == actor.role
-            if step.template_step
-            else False
+            step.template_step.required_role == actor.role if step.template_step else False
         )
 
         if step.step_order == 1:
@@ -496,9 +513,55 @@ class WorkflowService:
             instance.current_step_order = next_step.step_order
             if event.status == EventRequestStatus.SUBMITTED:
                 event.status = EventRequestStatus.IN_REVIEW
+
+            # Notify next reviewer: ACTION_REQUIRED
+            if next_step.assigned_to:
+                await NotificationService.create_notification(
+                    db=db,
+                    recipient_id=next_step.assigned_to,
+                    notification_type=NotificationType.ACTION_REQUIRED,
+                    title=f"Action Required: Step {next_step.step_order} - {next_step.step_name}",
+                    message=(
+                        f"Proposal '{event.title}' has advanced to Step {next_step.step_order} "
+                        f"({next_step.step_name}) and requires your review."
+                    ),
+                    event_request_id=event.id,
+                )
+            # Notify secretary: STEP_APPROVED
+            if event.submitted_by:
+                await NotificationService.create_notification(
+                    db=db,
+                    recipient_id=event.submitted_by,
+                    notification_type=NotificationType.STEP_APPROVED,
+                    title=f"Step Approved: {step.step_name}",
+                    message=(
+                        f"Step {step.step_order} ({step.step_name}) for proposal '{event.title}' "
+                        f"has been approved."
+                    ),
+                    event_request_id=event.id,
+                )
         else:
             instance.status = WorkflowInstanceStatus.COMPLETED
             event.status = EventRequestStatus.APPROVED
+
+            # Create confirmed Event (Idempotent)
+            from app.services.event_service import EventService
+
+            await EventService.create_confirmed_event(db=db, event=event, actor=actor)
+
+            # Notify secretary: PROPOSAL_APPROVED
+            if event.submitted_by:
+                await NotificationService.create_notification(
+                    db=db,
+                    recipient_id=event.submitted_by,
+                    notification_type=NotificationType.PROPOSAL_APPROVED,
+                    title=f"Proposal Approved: '{event.title}'",
+                    message=(
+                        f"Your event proposal '{event.title}' has received final sanction "
+                        "and is officially approved!"
+                    ),
+                    event_request_id=event.id,
+                )
 
         # 7. Audit log
         actor_role_str = actor.role.value if hasattr(actor.role, "value") else str(actor.role)
@@ -589,9 +652,7 @@ class WorkflowService:
         # legitimately holding the required institutional role may act.
         is_assigned = step.assigned_to == actor.id
         is_role_match = (
-            step.template_step.required_role == actor.role
-            if step.template_step
-            else False
+            step.template_step.required_role == actor.role if step.template_step else False
         )
 
         if step.step_order == 1:
@@ -629,6 +690,20 @@ class WorkflowService:
         booking = await db.scalar(booking_stmt)
         if booking:
             booking.is_active = False
+
+        # Notify secretary: PROPOSAL_REJECTED
+        if event.submitted_by:
+            await NotificationService.create_notification(
+                db=db,
+                recipient_id=event.submitted_by,
+                notification_type=NotificationType.PROPOSAL_REJECTED,
+                title=f"Proposal Rejected: '{event.title}'",
+                message=(
+                    f"Your proposal '{event.title}' was rejected at Step {step.step_order} "
+                    f"({step.step_name}). Reason: {comments}"
+                ),
+                event_request_id=event.id,
+            )
 
         actor_role_str = actor.role.value if hasattr(actor.role, "value") else str(actor.role)
         db.add(
@@ -718,9 +793,7 @@ class WorkflowService:
         # legitimately holding the required institutional role may act.
         is_assigned = step.assigned_to == actor.id
         is_role_match = (
-            step.template_step.required_role == actor.role
-            if step.template_step
-            else False
+            step.template_step.required_role == actor.role if step.template_step else False
         )
 
         if step.step_order == 1:
@@ -743,6 +816,20 @@ class WorkflowService:
 
         # Unlock proposal for secretary modification
         event.status = EventRequestStatus.REVISION_REQUIRED
+
+        # Notify secretary: REVISION_REQUIRED
+        if event.submitted_by:
+            await NotificationService.create_notification(
+                db=db,
+                recipient_id=event.submitted_by,
+                notification_type=NotificationType.REVISION_REQUIRED,
+                title=f"Revision Required: '{event.title}'",
+                message=(
+                    f"Changes were requested at Step {step.step_order} ({step.step_name}) "
+                    f"for proposal '{event.title}'. Instructions: {comments}"
+                ),
+                event_request_id=event.id,
+            )
 
         actor_role_str = actor.role.value if hasattr(actor.role, "value") else str(actor.role)
         db.add(

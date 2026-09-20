@@ -14,10 +14,11 @@ Security principles:
 - JWT claims include exp, iat, jti, sub, role, email, and token_type
 - Never store raw tokens (refresh, verification, reset) in plaintext
 """
+
 import hashlib
 import secrets
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from argon2 import PasswordHasher
@@ -104,7 +105,7 @@ def create_access_token(
     - exp: Expiration UTC timestamp
     """
     settings = get_settings()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     if expires_delta is not None:
         expire = now + expires_delta

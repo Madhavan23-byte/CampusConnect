@@ -8,11 +8,12 @@ Strict schemas enforcing:
 - Arithmetic consistency and validation
 - Finance Officer verification models
 """
+
 import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.enums import BudgetLineItemCategory, FinanceVerificationStatus
 
@@ -34,7 +35,9 @@ def _validate_decimal_places(v: Decimal | None) -> Decimal | None:
 class BudgetLineItemCreate(BaseModel):
     """Payload for creating a new line item in a budget proposal."""
 
-    description: str = Field(min_length=2, max_length=500, description="Item description / specification")
+    description: str = Field(
+        min_length=2, max_length=500, description="Item description / specification"
+    )
     category: BudgetLineItemCategory = Field(description="Expense classification")
     estimated_amount: Decimal = Field(
         gt=Decimal("0.00"), max_digits=12, decimal_places=2, description="Estimated cost in INR"
@@ -60,7 +63,9 @@ class BudgetLineItemUpdate(BaseModel):
 
     description: str | None = Field(default=None, min_length=2, max_length=500)
     category: BudgetLineItemCategory | None = None
-    estimated_amount: Decimal | None = Field(default=None, gt=Decimal("0.00"), max_digits=12, decimal_places=2)
+    estimated_amount: Decimal | None = Field(
+        default=None, gt=Decimal("0.00"), max_digits=12, decimal_places=2
+    )
     notes: str | None = Field(default=None, max_length=500)
 
     @field_validator("description")
@@ -160,7 +165,9 @@ class FinanceVerificationRequest(BaseModel):
     status: FinanceVerificationStatus = Field(
         description="Target verification status: VERIFIED or QUERIED"
     )
-    notes: str | None = Field(default=None, max_length=2000, description="Audit queries or clearance notes")
+    notes: str | None = Field(
+        default=None, max_length=2000, description="Audit queries or clearance notes"
+    )
 
     @field_validator("status")
     @classmethod

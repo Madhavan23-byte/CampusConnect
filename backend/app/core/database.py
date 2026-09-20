@@ -2,6 +2,7 @@
 CampusConnect Backend — Async Database Engine
 Uses SQLAlchemy 2.0 async with asyncpg driver.
 """
+
 from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
@@ -24,6 +25,7 @@ engine_kwargs: dict = {
 
 if "sqlite" in settings.DATABASE_URL:
     from sqlalchemy.pool import StaticPool
+
     engine_kwargs["connect_args"] = {"check_same_thread": False}
     engine_kwargs["poolclass"] = StaticPool
 else:

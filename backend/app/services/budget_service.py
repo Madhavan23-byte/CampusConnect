@@ -11,10 +11,10 @@ Encapsulates all domain and financial logic for:
 7. Finance Officer pre-audit review and verification (VERIFIED / QUERIED)
 8. Transactional audit logging (PROPOSAL_UPDATED, BUDGET_VERIFIED, BUDGET_QUERIED)
 """
+
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
 
 from sqlalchemy import inspect, select
 from sqlalchemy.exc import IntegrityError
@@ -34,16 +34,13 @@ from app.models.domain import (
     AuditLog,
     BudgetLineItem,
     BudgetProposal,
-    Club,
     EventRequest,
     User,
 )
 from app.models.enums import (
     AuditAction,
-    BudgetLineItemCategory,
     EventRequestStatus,
     FinanceVerificationStatus,
-    UserRole,
 )
 from app.schemas.budget import (
     BudgetLineItemCreate,
@@ -140,7 +137,9 @@ class BudgetService:
             db, event.club_id, actor, "create a budget proposal for this event"
         )
         if not club.is_active:
-            raise BadRequestError(f"Club '{club.name}' is currently inactive and cannot propose budgets.")
+            raise BadRequestError(
+                f"Club '{club.name}' is currently inactive and cannot propose budgets."
+            )
 
         # 4. Enforce 1-to-1: Check if budget already exists
         existing_bp = await db.scalar(
@@ -156,7 +155,9 @@ class BudgetService:
 
         for item_in in budget_in.line_items:
             if item_in.estimated_amount <= Decimal("0.00"):
-                raise BadRequestError("Line item estimated amount must be strictly greater than zero.")
+                raise BadRequestError(
+                    "Line item estimated amount must be strictly greater than zero."
+                )
             total_expenditure += item_in.estimated_amount
             line_item_models.append(
                 BudgetLineItem(
@@ -178,7 +179,9 @@ class BudgetService:
             )
 
         # 7. Balance check: income + contribution should not exceed total expenditure (if line items exist)
-        if line_item_models and (budget_in.expected_income + budget_in.institute_contribution > total_expenditure):
+        if line_item_models and (
+            budget_in.expected_income + budget_in.institute_contribution > total_expenditure
+        ):
             raise BadRequestError(
                 f"Sum of expected income (₹{budget_in.expected_income:,.2f}) and institute contribution "
                 f"(₹{budget_in.institute_contribution:,.2f}) cannot exceed total expenditure (₹{total_expenditure:,.2f})."
@@ -223,7 +226,9 @@ class BudgetService:
             await db.refresh(bp)
         except IntegrityError as exc:
             await db.rollback()
-            raise ConflictError("Could not create budget proposal due to database conflict.") from exc
+            raise ConflictError(
+                "Could not create budget proposal due to database conflict."
+            ) from exc
 
         loaded = await db.scalar(
             select(BudgetProposal)
@@ -282,7 +287,11 @@ class BudgetService:
 
         bp = await cls.get_budget_proposal(db, event_id)
 
-        target_income = budget_in.expected_income if budget_in.expected_income is not None else bp.expected_income
+        target_income = (
+            budget_in.expected_income
+            if budget_in.expected_income is not None
+            else bp.expected_income
+        )
         target_contribution = (
             budget_in.institute_contribution
             if budget_in.institute_contribution is not None
@@ -339,7 +348,9 @@ class BudgetService:
             await db.refresh(bp)
         except IntegrityError as exc:
             await db.rollback()
-            raise ConflictError("Could not update budget proposal due to database conflict.") from exc
+            raise ConflictError(
+                "Could not update budget proposal due to database conflict."
+            ) from exc
 
         loaded = await db.scalar(
             select(BudgetProposal)
@@ -391,7 +402,10 @@ class BudgetService:
                 action=AuditAction.PROPOSAL_UPDATED,
                 entity_type="budget_proposal",
                 entity_id=str(bp.id),
-                previous_state={"event_id": str(event_id), "total": str(bp.total_expected_expenditure)},
+                previous_state={
+                    "event_id": str(event_id),
+                    "total": str(bp.total_expected_expenditure),
+                },
                 new_state=None,
                 ip_address=ip_address,
                 user_agent=user_agent,
@@ -668,7 +682,7 @@ class BudgetService:
         prev_status = bp.finance_status
         bp.finance_status = verification_in.status
         bp.finance_verified_by = actor.id
-        bp.finance_verified_at = datetime.now(timezone.utc)
+        bp.finance_verified_at = datetime.now(UTC)
         bp.finance_notes = verification_in.notes
 
         action = (

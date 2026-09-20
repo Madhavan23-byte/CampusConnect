@@ -7,8 +7,10 @@ Pydantic v2 schemas for:
 - Member additions and role updates
 - Safe member responses without sensitive credentials
 """
+
 import uuid
 from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.enums import ClubMemberRole
@@ -18,10 +20,18 @@ class ClubCreate(BaseModel):
     """Payload for registering a new college club."""
 
     name: str = Field(min_length=2, max_length=255, description="Official club name")
-    description: str | None = Field(default=None, max_length=2000, description="Club purpose and mission")
-    faculty_advisor_id: uuid.UUID | None = Field(default=None, description="Assigned Faculty Advisor user ID")
-    academic_year: str = Field(min_length=4, max_length=10, description="Charter academic year, e.g. 2026-27")
-    logo_url: str | None = Field(default=None, max_length=500, description="URL or relative path to club logo")
+    description: str | None = Field(
+        default=None, max_length=2000, description="Club purpose and mission"
+    )
+    faculty_advisor_id: uuid.UUID | None = Field(
+        default=None, description="Assigned Faculty Advisor user ID"
+    )
+    academic_year: str = Field(
+        min_length=4, max_length=10, description="Charter academic year, e.g. 2026-27"
+    )
+    logo_url: str | None = Field(
+        default=None, max_length=500, description="URL or relative path to club logo"
+    )
 
     @field_validator("name")
     @classmethod
@@ -47,7 +57,9 @@ class ClubUpdate(BaseModel):
     description: str | None = Field(default=None, max_length=2000)
     logo_url: str | None = Field(default=None, max_length=500)
     is_active: bool | None = Field(default=None, description="Active status")
-    faculty_advisor_id: uuid.UUID | None = Field(default=None, description="New Faculty Advisor user ID")
+    faculty_advisor_id: uuid.UUID | None = Field(
+        default=None, description="New Faculty Advisor user ID"
+    )
     academic_year: str | None = Field(default=None, min_length=4, max_length=10)
 
     @field_validator("name")

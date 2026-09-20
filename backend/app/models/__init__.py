@@ -1,4 +1,5 @@
 """CampusConnect models package."""
+
 from app.models.domain import (
     AuditLog,
     BudgetLineItem,

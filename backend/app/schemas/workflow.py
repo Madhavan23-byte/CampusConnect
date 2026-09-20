@@ -7,6 +7,7 @@ Strict schemas for:
 - Workflow step representation and chain inspection
 - Approver pending action queues
 """
+
 import uuid
 from datetime import datetime
 

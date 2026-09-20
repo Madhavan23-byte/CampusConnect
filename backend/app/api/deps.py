@@ -7,6 +7,7 @@ Provides:
 - Role-based authorization dependencies (`require_role`, `require_any_role`)
 - Permission-based authorization dependency (`require_permission`)
 """
+
 import uuid
 from collections.abc import Sequence
 from typing import Annotated
@@ -22,7 +23,7 @@ from app.core.exceptions import (
     InvalidTokenError,
     UnauthorizedError,
 )
-from app.core.permissions import Permission, ROLE_PERMISSIONS
+from app.core.permissions import ROLE_PERMISSIONS, Permission
 from app.core.security import decode_access_token
 from app.models.domain import User
 from app.models.enums import UserRole
@@ -85,9 +86,7 @@ def _normalize_role(role: UserRole | str) -> str:
             return UserRole(role).value
         except ValueError:
             valid_roles = ", ".join(sorted(r.value for r in UserRole))
-            raise ValueError(
-                f"Invalid user role: '{role}'. Must be one of: {valid_roles}"
-            )
+            raise ValueError(f"Invalid user role: '{role}'. Must be one of: {valid_roles}")
     raise TypeError(f"Role must be a UserRole enum or str, got {type(role).__name__}")
 
 

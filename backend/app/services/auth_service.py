@@ -25,8 +25,9 @@ Encapsulates all authentication and session domain logic:
    - Revokes specific refresh token
    - Revokes all active refresh tokens for a user
 """
+
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
@@ -53,9 +54,7 @@ from app.models.domain import RefreshToken, User
 from app.schemas.auth import UserLoginRequest, UserRegisterRequest
 
 # Dummy Argon2id hash used to equalize execution timing when a user does not exist
-DUMMY_ARGON2_HASH = (
-    "$argon2id$v=19$m=65536,t=3,p=4$F53IMsfK6I6ChyDeFoCO8A$yoKhongjpic2FC/RvgqQNvdSJA+Nk5AAzNrMBhybIIQ"
-)
+DUMMY_ARGON2_HASH = "$argon2id$v=19$m=65536,t=3,p=4$F53IMsfK6I6ChyDeFoCO8A$yoKhongjpic2FC/RvgqQNvdSJA+Nk5AAzNrMBhybIIQ"
 
 
 def _ensure_utc(dt: datetime | None) -> datetime | None:
@@ -63,7 +62,7 @@ def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
+        return dt.replace(tzinfo=UTC)
     return dt
 
 
@@ -121,7 +120,9 @@ class AuthService:
             await db.refresh(user)
         except IntegrityError as exc:
             await db.rollback()
-            raise EmailAlreadyExistsError("An account with this email address already exists") from exc
+            raise EmailAlreadyExistsError(
+                "An account with this email address already exists"
+            ) from exc
 
         return user
 
@@ -144,7 +145,7 @@ class AuthService:
             AccountLockedError: If account is locked due to consecutive failed attempts.
         """
         settings = get_settings()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         normalized_email = login_data.email.strip().lower()
 
         # Find user by email
@@ -251,7 +252,7 @@ class AuthService:
             raise InvalidTokenError("Refresh token must be a non-empty string")
 
         token_hash = hash_token(raw_refresh_token)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         settings = get_settings()
 
         # Find refresh token record
@@ -342,7 +343,7 @@ class AuthService:
         if record is None or record.revoked_at is not None:
             return False
 
-        record.revoked_at = datetime.now(timezone.utc)
+        record.revoked_at = datetime.now(UTC)
         await db.commit()
         return True
 
@@ -355,7 +356,7 @@ class AuthService:
         Revoke all active refresh tokens for a user (e.g. password reset or global logout).
         Returns the number of revoked tokens.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         result = await db.execute(
             update(RefreshToken)
             .where(

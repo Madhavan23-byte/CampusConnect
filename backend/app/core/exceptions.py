@@ -3,6 +3,7 @@ CampusConnect Backend — Custom Exception Classes
 Centralised exception hierarchy. FastAPI exception handlers in main.py
 convert these to proper HTTP responses.
 """
+
 from typing import Any
 
 
@@ -20,6 +21,7 @@ class CampusConnectError(Exception):
 # ---------------------------------------------------------------------------
 class BadRequestError(CampusConnectError):
     """Malformed request or invalid input that cannot be expressed via Pydantic."""
+
     status_code: int = 400
 
 
@@ -28,6 +30,7 @@ class BadRequestError(CampusConnectError):
 # ---------------------------------------------------------------------------
 class UnauthorizedError(CampusConnectError):
     """Request is not authenticated."""
+
     status_code: int = 401
 
 
@@ -60,6 +63,7 @@ class AccountInactiveError(UnauthorizedError):
 # ---------------------------------------------------------------------------
 class ForbiddenError(CampusConnectError):
     """Authenticated but not authorised for this action."""
+
     status_code: int = 403
 
 
@@ -80,6 +84,7 @@ class WorkflowStateError(ForbiddenError):
 # ---------------------------------------------------------------------------
 class NotFoundError(CampusConnectError):
     """Requested resource not found (or soft-deleted)."""
+
     status_code: int = 404
 
 
@@ -88,6 +93,7 @@ class NotFoundError(CampusConnectError):
 # ---------------------------------------------------------------------------
 class ConflictError(CampusConnectError):
     """Resource conflict — e.g. hall double-booking, optimistic lock failure."""
+
     status_code: int = 409
 
 
@@ -105,6 +111,7 @@ class OptimisticLockError(ConflictError):
 
 class DuplicateSubmissionError(ConflictError):
     """Duplicate idempotency key — return cached result."""
+
     def __init__(self, message: str, cached_response: Any = None) -> None:
         super().__init__(message)
         self.cached_response = cached_response
@@ -115,6 +122,7 @@ class DuplicateSubmissionError(ConflictError):
 # ---------------------------------------------------------------------------
 class BusinessRuleError(CampusConnectError):
     """Business rule violation that passes schema validation but fails domain logic."""
+
     status_code: int = 422
 
 
@@ -135,4 +143,5 @@ class BudgetCapExceededError(BusinessRuleError):
 # ---------------------------------------------------------------------------
 class InternalError(CampusConnectError):
     """Unexpected server-side error."""
+
     status_code: int = 500

@@ -8,6 +8,7 @@ Routes:
 - PATCH  /api/v1/events/{id}       : Modify event proposal draft (EVENT_EDIT_DRAFT)
 - POST   /api/v1/events/{id}/submit : Submit proposal into approval workflow (EVENT_PROPOSE)
 """
+
 import uuid
 from typing import Annotated
 
@@ -18,14 +19,6 @@ from app.api.deps import get_db, require_permission
 from app.core.permissions import Permission
 from app.models.domain import User
 from app.models.enums import EventRequestStatus
-from app.schemas.event import (
-    EventRequestCreate,
-    EventRequestResponse,
-    EventRequestSubmit,
-    EventRequestUpdate,
-)
-from app.schemas.venue import VenueRequestCreate, VenueRequestResponse, VenueRequestUpdate
-from app.services.venue_service import VenueService, to_venue_response
 from app.schemas.budget import (
     BudgetLineItemCreate,
     BudgetLineItemResponse,
@@ -35,13 +28,21 @@ from app.schemas.budget import (
     BudgetProposalUpdate,
     FinanceVerificationRequest,
 )
+from app.schemas.event import (
+    EventRequestCreate,
+    EventRequestResponse,
+    EventRequestSubmit,
+    EventRequestUpdate,
+)
+from app.schemas.venue import VenueRequestCreate, VenueRequestResponse, VenueRequestUpdate
+from app.schemas.workflow import WorkflowInstanceResponse
 from app.services.budget_service import (
     BudgetService,
     to_budget_response,
     to_line_item_response,
 )
-from app.schemas.workflow import WorkflowInstanceResponse
 from app.services.event_service import EventService, to_event_response
+from app.services.venue_service import VenueService, to_venue_response
 from app.services.workflow_service import WorkflowService
 
 router = APIRouter()
@@ -84,7 +85,9 @@ async def list_events(
     current_user: Annotated[User, Depends(require_permission(Permission.EVENT_VIEW_ALL))],
     db: Annotated[AsyncSession, Depends(get_db)],
     club_id: uuid.UUID | None = Query(default=None, description="Filter by club ID"),
-    status: EventRequestStatus | None = Query(default=None, description="Filter by proposal status"),
+    status: EventRequestStatus | None = Query(
+        default=None, description="Filter by proposal status"
+    ),
     skip: int = Query(default=0, ge=0, description="Offset for pagination"),
     limit: int = Query(default=50, ge=1, le=100, description="Max records to return"),
 ) -> list[EventRequestResponse]:

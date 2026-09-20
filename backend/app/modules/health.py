@@ -3,7 +3,8 @@ CampusConnect — Health Check Endpoint
 Returns application status and database connectivity.
 No authentication required — used by Docker health checks and monitoring.
 """
-from datetime import datetime, timezone
+
+from datetime import UTC, datetime
 
 from fastapi import APIRouter
 from sqlalchemy import text
@@ -50,7 +51,7 @@ async def health_check():
         "app": settings.APP_NAME,
         "version": settings.APP_VERSION,
         "environment": settings.ENV,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "checks": {
             "database": {
                 "status": db_status,

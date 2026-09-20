@@ -4,6 +4,7 @@ CampusConnect Backend — FastAPI Application Entry Point
 Centralised exception handlers ensure no stack traces reach clients.
 All CampusConnect custom exceptions map to structured JSON responses.
 """
+
 import time
 from contextlib import asynccontextmanager
 
@@ -197,8 +198,8 @@ def create_app() -> FastAPI:
     # ------------------------------------------------------------------
     # Register routers
     # ------------------------------------------------------------------
-    from app.modules.health import router as health_router
     from app.api.v1.api import api_router
+    from app.modules.health import router as health_router
 
     app.include_router(health_router, prefix="/api/v1")
     app.include_router(api_router, prefix="/api/v1")

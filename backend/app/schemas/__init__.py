@@ -38,15 +38,6 @@ __all__ = [
     "EventRequestSubmit",
     "EventRequestResponse",
 ]
-from app.schemas.venue import (
-    HallAvailabilityResponse,
-    HallCreate,
-    HallResponse,
-    VenueRequestCreate,
-    VenueRequestResponse,
-    VenueRequestUpdate,
-)
-
 from app.schemas.budget import (
     BudgetLineItemCreate,
     BudgetLineItemResponse,
@@ -56,7 +47,14 @@ from app.schemas.budget import (
     BudgetProposalUpdate,
     FinanceVerificationRequest,
 )
-
+from app.schemas.venue import (
+    HallAvailabilityResponse,
+    HallCreate,
+    HallResponse,
+    VenueRequestCreate,
+    VenueRequestResponse,
+    VenueRequestUpdate,
+)
 from app.schemas.workflow import (
     WorkflowInstanceResponse,
     WorkflowPendingItemResponse,

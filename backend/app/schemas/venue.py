@@ -8,8 +8,9 @@ Strict schemas enforcing:
 - Physical facility requirements (stage, LCD, audio, AC, projector, etc.)
 - Hall availability inspection
 """
+
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -38,7 +39,9 @@ class HallCreate(BaseModel):
     """Payload for registering a new campus hall or venue."""
 
     name: str = Field(min_length=2, max_length=255, description="Official hall name")
-    location: str | None = Field(default=None, max_length=500, description="Building / campus location")
+    location: str | None = Field(
+        default=None, max_length=500, description="Building / campus location"
+    )
     capacity: int = Field(ge=1, le=50000, description="Maximum seated/fire-code capacity")
     available_facilities: list[str] | dict[str, Any] | None = Field(
         default=None, description="Available facilities: projector, audio, stage, etc."

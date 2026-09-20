@@ -3,6 +3,7 @@ CampusConnect Backend — Structured Logging
 JSON-structured logging for all environments.
 Sensitive fields are never logged.
 """
+
 import logging
 import sys
 from typing import Any

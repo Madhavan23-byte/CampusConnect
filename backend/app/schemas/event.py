@@ -7,8 +7,10 @@ Pydantic v2 schemas for:
 - Event proposal submission and snapshotting
 - Safe public representations with club and submitter details
 """
+
 import uuid
 from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.enums import EventRequestStatus, EventType
@@ -19,14 +21,20 @@ class EventRequestCreate(BaseModel):
 
     club_id: uuid.UUID = Field(description="Target club charter ID")
     title: str = Field(min_length=3, max_length=500, description="Title of the event")
-    description: str | None = Field(default=None, max_length=5000, description="Detailed agenda and description")
+    description: str | None = Field(
+        default=None, max_length=5000, description="Detailed agenda and description"
+    )
     event_type: EventType = Field(description="Institutional category of event")
-    expected_attendees: int | None = Field(default=None, ge=1, le=100000, description="Expected participant count")
+    expected_attendees: int | None = Field(
+        default=None, ge=1, le=100000, description="Expected participant count"
+    )
     event_date: datetime | None = Field(default=None, description="Planned event date / start time")
     chief_guest_name: str | None = Field(default=None, max_length=255)
     chief_guest_designation: str | None = Field(default=None, max_length=255)
     chief_guest_institution: str | None = Field(default=None, max_length=255)
-    academic_year: str = Field(min_length=4, max_length=10, description="Charter academic year, e.g. 2026-27")
+    academic_year: str = Field(
+        min_length=4, max_length=10, description="Charter academic year, e.g. 2026-27"
+    )
 
     @field_validator("title")
     @classmethod

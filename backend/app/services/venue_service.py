@@ -11,9 +11,9 @@ Encapsulates all domain logic for:
 7. Resource ownership enforcement via ClubService
 8. Transactionally consistent audit logging (HALL_CREATED, HALL_BOOKED, HALL_RELEASED)
 """
+
 import uuid
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
 
 from sqlalchemy import inspect, select
 from sqlalchemy.exc import IntegrityError
@@ -32,7 +32,6 @@ from app.core.exceptions import (
 )
 from app.models.domain import (
     AuditLog,
-    Club,
     EventRequest,
     Hall,
     HallBookingConfirmed,
@@ -44,7 +43,6 @@ from app.schemas.venue import (
     HallAvailabilityResponse,
     HallAvailabilitySlot,
     HallCreate,
-    HallResponse,
     VenueRequestCreate,
     VenueRequestResponse,
     VenueRequestUpdate,
@@ -265,7 +263,7 @@ class VenueService:
 
         # 6. Validate lead time (configurable advance booking notice)
         settings = get_settings()
-        now_utc = datetime.now(timezone.utc)
+        now_utc = datetime.now(UTC)
         if (venue_in.start_time - now_utc).total_seconds() < 0:
             raise BadRequestError("Cannot request venue booking in the past.")
 

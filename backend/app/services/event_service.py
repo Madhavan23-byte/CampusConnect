@@ -14,7 +14,8 @@ Encapsulates all domain logic for event proposals (EventRequest):
 3. Draft modification:
    - Verifies proposal status is DRAFT or REVISION_REQUIRED
    - Enforces resource ownership (SECRETARY of specific club or SYSTEM_ADMIN)
-   - Rejects editing of SUBMITTED, IN_REVIEW, APPROVED, REJECTED, or CANCELLED proposals (WorkflowStateError -> 403)
+   - Rejects editing of SUBMITTED, IN_REVIEW, APPROVED, REJECTED,
+     or CANCELLED proposals (WorkflowStateError -> 403)
    - Optimistic concurrency control via version_lock increment
    - Transactionally consistent audit logging (PROPOSAL_UPDATED)
 4. Proposal submission:
@@ -26,10 +27,12 @@ Encapsulates all domain logic for event proposals (EventRequest):
    - Creates immutable EventRequestVersion snapshot (version N)
    - Transactionally consistent audit logging (PROPOSAL_SUBMITTED)
 """
+
 import uuid
+from datetime import UTC
 from typing import Any
 
-from sqlalchemy import func, inspect, select
+from sqlalchemy import inspect, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -41,8 +44,17 @@ from app.core.exceptions import (
     NotFoundError,
     WorkflowStateError,
 )
-from app.models.domain import AuditLog, BudgetProposal, Club, EventRequest, EventRequestVersion, User, VenueRequest
-from app.models.enums import AuditAction, EventRequestStatus, UserRole
+from app.models.domain import (
+    AuditLog,
+    BudgetProposal,
+    Event,
+    EventRequest,
+    EventRequestVersion,
+    HallBookingConfirmed,
+    User,
+    VenueRequest,
+)
+from app.models.enums import AuditAction, EventRequestStatus, EventStatus
 from app.schemas.event import (
     EventRequestCreate,
     EventRequestResponse,
@@ -53,7 +65,7 @@ from app.services.club_service import ClubService
 
 
 def to_event_response(event: EventRequest) -> EventRequestResponse:
-    """Format an EventRequest domain model into a safe public EventRequestResponse without triggering lazy loads."""
+    """Format an EventRequest domain model into a safe public schema without lazy loads."""
     insp = inspect(event)
 
     club_name = None
@@ -143,7 +155,9 @@ class EventService:
 
         actor_role_str = actor.role.value if hasattr(actor.role, "value") else str(actor.role)
         event_type_str = (
-            event_in.event_type.value if hasattr(event_in.event_type, "value") else str(event_in.event_type)
+            event_in.event_type.value
+            if hasattr(event_in.event_type, "value")
+            else str(event_in.event_type)
         )
         new_state = {
             "title": event.title,
@@ -174,7 +188,9 @@ class EventService:
             await db.refresh(event)
         except IntegrityError as exc:
             await db.rollback()
-            raise ConflictError("Could not create event proposal due to database conflict.") from exc
+            raise ConflictError(
+                "Could not create event proposal due to database conflict."
+            ) from exc
 
         # Reload with relationships
         loaded = await db.scalar(
@@ -208,7 +224,7 @@ class EventService:
         limit: int = 50,
         actor: User | None = None,
     ) -> list[EventRequest]:
-        """List event proposals excluding soft-deleted records. Supports filtering and pagination."""
+        """List event proposals excluding soft-deleted records. Supports filtering."""
         stmt = (
             select(EventRequest)
             .options(selectinload(EventRequest.club), selectinload(EventRequest.submitted_by_user))
@@ -235,7 +251,8 @@ class EventService:
     ) -> EventRequest:
         """
         Update an event proposal draft.
-        Strictly enforces state machine: ONLY proposals in DRAFT or REVISION_REQUIRED can be modified.
+        Strictly enforces state machine: ONLY proposals in DRAFT or
+        REVISION_REQUIRED can be modified.
         Submitted or in-review proposals are immutable to planners.
         """
         event = await cls.get_event(db, event_id, actor)
@@ -260,7 +277,9 @@ class EventService:
         prev_state: dict[str, Any] = {
             "title": event.title,
             "description": event.description,
-            "event_type": event.event_type.value if hasattr(event.event_type, "value") else str(event.event_type),
+            "event_type": event.event_type.value
+            if hasattr(event.event_type, "value")
+            else str(event.event_type),
             "expected_attendees": event.expected_attendees,
             "event_date": event.event_date.isoformat() if event.event_date else None,
             "status": event.status.value if hasattr(event.status, "value") else str(event.status),
@@ -294,7 +313,9 @@ class EventService:
         new_state: dict[str, Any] = {
             "title": event.title,
             "description": event.description,
-            "event_type": event.event_type.value if hasattr(event.event_type, "value") else str(event.event_type),
+            "event_type": event.event_type.value
+            if hasattr(event.event_type, "value")
+            else str(event.event_type),
             "expected_attendees": event.expected_attendees,
             "event_date": event.event_date.isoformat() if event.event_date else None,
             "status": event.status.value if hasattr(event.status, "value") else str(event.status),
@@ -322,7 +343,9 @@ class EventService:
             await db.refresh(event)
         except IntegrityError as exc:
             await db.rollback()
-            raise ConflictError("Could not update event proposal due to concurrent conflict.") from exc
+            raise ConflictError(
+                "Could not update event proposal due to concurrent conflict."
+            ) from exc
 
         loaded = await db.scalar(
             select(EventRequest)
@@ -345,7 +368,8 @@ class EventService:
         """
         Submit an event proposal into the formal institutional workflow.
         1. Verifies state machine (only DRAFT or REVISION_REQUIRED can be submitted).
-        2. Idempotency handling: If identical idempotency_key was already processed, return existing.
+        2. Idempotency handling: If identical idempotency_key was already processed,
+           return existing.
         3. Enforces secretary ownership of the club.
         4. Advances status to SUBMITTED.
         5. Increments current_version and writes immutable EventRequestVersion snapshot.
@@ -354,14 +378,19 @@ class EventService:
         event = await cls.get_event(db, event_id, actor)
 
         # Check idempotency: If event is already SUBMITTED with the same key, return idempotently
-        if idempotency_key and event.idempotency_key == idempotency_key and event.status == EventRequestStatus.SUBMITTED:
+        if (
+            idempotency_key
+            and event.idempotency_key == idempotency_key
+            and event.status == EventRequestStatus.SUBMITTED
+        ):
             return event
 
         # Enforce lifecycle transition
         if event.status not in (EventRequestStatus.DRAFT, EventRequestStatus.REVISION_REQUIRED):
             status_str = event.status.value if hasattr(event.status, "value") else str(event.status)
             raise WorkflowStateError(
-                f"Cannot submit proposal in '{status_str}' status. Only DRAFT or REVISION_REQUIRED proposals can be submitted."
+                f"Cannot submit proposal in '{status_str}' status. "
+                "Only DRAFT or REVISION_REQUIRED proposals can be submitted."
             )
 
         # Enforce club secretary ownership
@@ -384,7 +413,9 @@ class EventService:
                 raise ConflictError("An event proposal with this idempotency key already exists.")
             event.idempotency_key = idempotency_key
 
-        prev_status_str = event.status.value if hasattr(event.status, "value") else str(event.status)
+        prev_status_str = (
+            event.status.value if hasattr(event.status, "value") else str(event.status)
+        )
 
         # Advance state and version
         event.status = EventRequestStatus.SUBMITTED
@@ -445,7 +476,9 @@ class EventService:
                 "line_items": [
                     {
                         "description": item.description,
-                        "category": item.category.value if hasattr(item.category, "value") else str(item.category),
+                        "category": item.category.value
+                        if hasattr(item.category, "value")
+                        else str(item.category),
                         "estimated_amount": str(item.estimated_amount),
                         "notes": item.notes,
                     }
@@ -486,6 +519,7 @@ class EventService:
 
         # Instantiate or supersede institutional approval workflow
         from app.services.workflow_service import WorkflowService
+
         await WorkflowService.instantiate_workflow(db, event, actor)
 
         try:
@@ -501,3 +535,137 @@ class EventService:
             .where(EventRequest.id == event.id)
         )
         return loaded or event
+
+    @classmethod
+    async def create_confirmed_event(
+        cls,
+        db: AsyncSession,
+        event: EventRequest,
+        actor: User | None = None,
+    ) -> Event:
+        """
+        Create a confirmed Event from an APPROVED EventRequest.
+        Idempotent: if an Event already exists for event.id, returns it.
+        Uses latest approved EventRequestVersion and confirmed HallBookingConfirmed / VenueRequest.
+        """
+        # 1. Check idempotency: one event per approved event_request
+        existing_stmt = select(Event).where(Event.event_request_id == event.id)
+        existing_event = await db.scalar(existing_stmt)
+        if existing_event:
+            return existing_event
+
+        # 2. Get latest approved version
+        version_stmt = (
+            select(EventRequestVersion)
+            .where(EventRequestVersion.event_request_id == event.id)
+            .order_by(EventRequestVersion.version_number.desc())
+        )
+        approved_version = await db.scalar(version_stmt)
+
+        # 3. Get confirmed booking if present
+        booking_stmt = select(HallBookingConfirmed).where(
+            HallBookingConfirmed.event_request_id == event.id,
+            HallBookingConfirmed.is_active.is_(True),
+        )
+        booking = await db.scalar(booking_stmt)
+
+        # 4. Get venue request if booking not found
+        vr_stmt = select(VenueRequest).where(VenueRequest.event_request_id == event.id)
+        vr = await db.scalar(vr_stmt)
+
+        hall_id = booking.hall_id if booking else (vr.hall_id if vr and vr.hall_id else None)
+        event_date = (
+            booking.booking_date
+            if booking
+            else (
+                vr.requested_date
+                if vr and vr.requested_date
+                else (approved_version.proposed_datetime if approved_version else event.created_at)
+            )
+        )
+        start_time = (
+            booking.start_time
+            if booking
+            else (
+                vr.start_time
+                if vr and vr.start_time
+                else (approved_version.proposed_datetime if approved_version else event.created_at)
+            )
+        )
+        end_time = (
+            booking.end_time
+            if booking
+            else (
+                vr.end_time
+                if vr and vr.end_time
+                else (approved_version.proposed_datetime if approved_version else event.created_at)
+            )
+        )
+        snapshot = (
+            approved_version.snapshot
+            if (approved_version and approved_version.snapshot)
+            else {}
+        )
+        title = snapshot.get("title") or event.title or "Confirmed Event"
+        description = snapshot.get("description") or event.description
+        event_type = snapshot.get("event_type") or event.event_type
+        expected_attendees = (
+            snapshot.get("expected_attendees")
+            if snapshot.get("expected_attendees") is not None
+            else event.expected_attendees
+        )
+        version_id = approved_version.id if approved_version else event.id
+
+        # Ensure datetime fields have UTC tzinfo
+        if hasattr(event_date, "tzinfo") and event_date.tzinfo is None:
+            event_date = event_date.replace(tzinfo=UTC)
+        if hasattr(start_time, "tzinfo") and start_time.tzinfo is None:
+            start_time = start_time.replace(tzinfo=UTC)
+        if hasattr(end_time, "tzinfo") and end_time.tzinfo is None:
+            end_time = end_time.replace(tzinfo=UTC)
+
+        confirmed_event = Event(
+            id=uuid.uuid4(),
+            event_request_id=event.id,
+            approved_version_id=version_id,
+            club_id=event.club_id,
+            hall_id=hall_id,
+            title=title,
+            description=description,
+            event_type=event_type,
+            event_date=event_date,
+            start_time=start_time,
+            end_time=end_time,
+            expected_attendees=expected_attendees,
+            status=EventStatus.SCHEDULED,
+            academic_year=event.academic_year,
+        )
+        db.add(confirmed_event)
+        await db.flush()
+
+        # Audit log
+        actor_id = actor.id if actor else event.submitted_by
+        actor_email = actor.email if actor else "system"
+        actor_role = (
+            (actor.role.value if hasattr(actor.role, "value") else str(actor.role))
+            if actor
+            else "SYSTEM"
+        )
+        db.add(
+            AuditLog(
+                actor_id=actor_id,
+                actor_email=actor_email,
+                actor_role=actor_role,
+                action=AuditAction.EVENT_CREATED,
+                entity_type="event",
+                entity_id=str(confirmed_event.id),
+                previous_state=None,
+                new_state={
+                    "event_request_id": str(event.id),
+                    "title": confirmed_event.title,
+                    "status": EventStatus.SCHEDULED.value,
+                    "hall_id": str(hall_id) if hall_id else None,
+                },
+            )
+        )
+        return confirmed_event
