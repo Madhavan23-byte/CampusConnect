@@ -67,7 +67,7 @@ export type DocumentType =
   | 'CHIEF_GUEST_PROFILE'
   | 'VENUE_LAYOUT'
   | 'SUPPORTING'
-  | 'POST_EVENT_PHOTO'
+  | 'POST_EVENT_PHOTO' | 'EXPENSE_INVOICE'
   | 'OTHER'
 
 export type FinanceVerificationStatus = 'PENDING' | 'VERIFIED' | 'QUERIED'
@@ -402,5 +402,114 @@ export interface EvidenceDocument {
   geo_latitude?: number | null
   geo_longitude?: number | null
   geo_source?: string | null
+  created_at: string
+}
+
+
+// ============================================================================
+// ACTUAL EXPENSES & BILLS (PHASE 2.2)
+// ============================================================================
+
+export type BudgetLineItemCategory =
+  | 'MATERIALS'
+  | 'TRAVEL'
+  | 'PRINTING'
+  | 'FOOD'
+  | 'EQUIPMENT'
+  | 'OTHER'
+
+export type ActualExpenseStatus =
+  | 'DRAFT'
+  | 'SUBMITTED'
+  | 'VERIFIED'
+  | 'PARTIALLY_VERIFIED'
+  | 'QUERIED'
+  | 'DISALLOWED'
+
+export interface ActualExpense {
+  id: string
+  event_id: string
+  budget_line_item_id?: string | null
+  category: BudgetLineItemCategory
+  description: string
+  vendor_name: string
+  vendor_gstin?: string | null
+  invoice_number?: string | null
+  invoice_date: string
+  claimed_amount: string
+  verified_amount?: string | null
+  disallowed_amount: string
+  status: ActualExpenseStatus
+  bill_document_id: string
+  submitted_by: string
+  submitted_by_name?: string | null
+  submitted_by_email?: string | null
+  submitted_at?: string | null
+  verified_by?: string | null
+  verified_by_name?: string | null
+  verified_by_email?: string | null
+  verified_at?: string | null
+  finance_remarks?: string | null
+  query_reason?: string | null
+  is_flagged_for_review: boolean
+  review_notes?: string | null
+  bill_original_filename?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ExpenseCategorySummary {
+  category: string
+  claimed_amount: string
+  verified_amount: string
+  disallowed_amount: string
+  count: number
+}
+
+export interface ExpenseLedgerSummary {
+  event_id: string
+  sanctioned_budget: string
+  total_claimed_spend: string
+  total_verified_spend: string
+  total_disallowed_spend: string
+  total_expenses_count: number
+  status_counts: Record<string, number>
+  category_breakdown: ExpenseCategorySummary[]
+  can_submit: boolean
+  can_audit: boolean
+  delivery_certified: boolean
+  items: ActualExpense[]
+}
+
+export interface ActualExpenseCreate {
+  category: BudgetLineItemCategory
+  description: string
+  vendor_name: string
+  vendor_gstin?: string | null
+  invoice_number?: string | null
+  invoice_date: string
+  claimed_amount: number | string
+  bill_document_id: string
+  budget_line_item_id?: string | null
+}
+
+export interface ActualExpenseUpdate {
+  category?: BudgetLineItemCategory
+  description?: string
+  vendor_name?: string
+  vendor_gstin?: string | null
+  invoice_number?: string | null
+  invoice_date?: string | null
+  claimed_amount?: number | string
+  bill_document_id?: string
+  budget_line_item_id?: string | null
+}
+
+export interface BillUploadResponse {
+  id: string
+  original_filename: string
+  file_size_bytes: number
+  mime_type: string
+  file_hash?: string | null
   created_at: string
 }

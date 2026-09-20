@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { ExpenseLedgerTab } from '@/components/expenses/ExpenseLedgerTab'
 import { apiClient } from '@/lib/apiClient'
 import { useAuthStore } from '@/store/authStore'
 import type {
@@ -47,7 +48,7 @@ export const EventDetailPage: React.FC = () => {
   const [documents, setDocuments] = useState<EventDocument[]>([])
   const [resources, setResources] = useState<ResourceRequest[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'overview' | 'venue' | 'budget' | 'documents' | 'resources' | 'execution'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'venue' | 'budget' | 'documents' | 'resources' | 'execution' | 'expenses'>('overview')
 
   // Execution & Post-Event Report state (Phase 2.1)
   const [confirmedEvent, setConfirmedEvent] = useState<ConfirmedEvent | null>(null)
@@ -776,16 +777,28 @@ export const EventDetailPage: React.FC = () => {
         </button>
 
         {event.status === 'APPROVED' && (
-          <button
-            onClick={() => setActiveTab('execution')}
-            className={`px-4 py-2.5 border-b-2 flex items-center gap-2 font-bold ${
-              activeTab === 'execution'
-                ? 'border-primary-600 text-primary-600'
-                : 'border-transparent text-surface-500 hover:text-surface-800'
-            }`}
-          >
-            <Play className="w-4 h-4" /> Execution &amp; Report ({confirmedEvent?.status || 'SCHEDULED'})
-          </button>
+          <>
+            <button
+              onClick={() => setActiveTab('execution')}
+              className={`px-4 py-2.5 border-b-2 flex items-center gap-2 font-bold ${
+                activeTab === 'execution'
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-surface-500 hover:text-surface-800'
+              }`}
+            >
+              <Play className="w-4 h-4" /> Execution &amp; Report ({confirmedEvent?.status || 'SCHEDULED'})
+            </button>
+            <button
+              onClick={() => setActiveTab('expenses')}
+              className={`px-4 py-2.5 border-b-2 flex items-center gap-2 font-bold ${
+                activeTab === 'expenses'
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-surface-500 hover:text-surface-800'
+              }`}
+            >
+              <DollarSign className="w-4 h-4" /> Expenses &amp; Ledger
+            </button>
+          </>
         )}
       </div>
 
@@ -1990,6 +2003,19 @@ export const EventDetailPage: React.FC = () => {
             )}
           </div>
         </div>
+      )}
+
+      {/* Tab: Expenses & Ledger (Phase 2.2) */}
+      {activeTab === 'expenses' && (
+        <ExpenseLedgerTab
+          eventId={event.id}
+          eventStatus={event.status}
+          confirmedEventStatus={confirmedEvent?.status}
+          isCertified={postEventReport?.status === 'CERTIFIED'}
+          isSecretary={user?.role === 'CLUB_SECRETARY'}
+          isFinanceOfficer={user?.role === 'FINANCE_OFFICER'}
+          isAdmin={user?.role === 'SYSTEM_ADMIN'}
+        />
       )}
 
     </div>

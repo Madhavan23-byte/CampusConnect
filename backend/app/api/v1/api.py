@@ -10,6 +10,7 @@ from app.api.v1.endpoints.dashboard import router as dashboard_router
 from app.api.v1.endpoints.documents import router as documents_router
 from app.api.v1.endpoints.event_execution import router as event_execution_router
 from app.api.v1.endpoints.events import router as events_router
+from app.api.v1.endpoints.expenses import router as expenses_router
 from app.api.v1.endpoints.halls import router as halls_router
 from app.api.v1.endpoints.notifications import router as notifications_router
 from app.api.v1.endpoints.resources import router as resources_router
@@ -26,3 +27,4 @@ api_router.include_router(halls_router, prefix="/halls", tags=["Halls"])
 api_router.include_router(workflows_router, prefix="/workflows", tags=["Workflows"])
 api_router.include_router(notifications_router, prefix="/notifications", tags=["Notifications"])
 api_router.include_router(event_execution_router, prefix="/events", tags=["Event Execution"])
+api_router.include_router(expenses_router, prefix="/events", tags=["Expenses"])

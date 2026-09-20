@@ -20,7 +20,7 @@ if not POSTGRES_TEST_URL or "sqlite" in POSTGRES_TEST_URL:
     if "postgres" in db_url:
         POSTGRES_TEST_URL = db_url
     else:
-        POSTGRES_TEST_URL = "postgresql+asyncpg://campusconnect:campusconnect_dev_password@localhost:5433/campusconnect"
+        POSTGRES_TEST_URL = "postgresql+asyncpg://campusconnect:campusconnect_dev_password@localhost:5432/campusconnect"
 
 
 @pytest.mark.asyncio

@@ -4,6 +4,7 @@ Enforces strict MIME/magic-number validation, path traversal containment,
 event request lifecycle permissions, and audit logging.
 """
 
+import hashlib
 import uuid
 from decimal import Decimal
 from pathlib import Path
@@ -15,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.exceptions import (
     BadRequestError,
+    ConflictError,
     ForbiddenError,
     NotFoundError,
     WorkflowStateError,
@@ -517,3 +519,172 @@ class DocumentService:
             .order_by(Document.created_at.desc())
         )
         return list(result.all())
+
+    @classmethod
+    async def upload_expense_invoice(
+        cls,
+        db: AsyncSession,
+        event_id: uuid.UUID,
+        file: UploadFile,
+        actor: User,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> Document:
+        """
+        Upload and safely store an authentic bill or receipt document for a completed event.
+        Calculates SHA-256 digest and enforces:
+        1. Precondition: Event must be in COMPLETED status.
+        2. Authorization: Actor must be active CLUB_SECRETARY of the event's club (or SYSTEM_ADMIN).
+        3. Document format: Magic bytes match PDF, PNG, JPG/JPEG; max size 10MB.
+        4. Cross-event duplicate prevention: Exact file hash cannot match another event's bill.
+        5. Same-event deduplication: If identical file already uploaded for this event, reuses it.
+        """
+        settings = get_settings()
+
+        # 1. Resolve confirmed event
+        event = await db.scalar(
+            select(Event).where((Event.id == event_id) | (Event.event_request_id == event_id))
+        )
+        if not event:
+            raise NotFoundError(f"Confirmed event '{event_id}' not found.")
+
+        # 2. Check event status: must be COMPLETED
+        if event.status != EventStatus.COMPLETED:
+            st = event.status.value if hasattr(event.status, "value") else str(event.status)
+            raise WorkflowStateError(
+                "Expenses and bills can only be uploaded for COMPLETED events "
+                f"(current status: '{st}')."
+            )
+
+        # 3. Check Secretary authorization for this event's club
+        if actor.role != UserRole.SYSTEM_ADMIN:
+            member = await db.scalar(
+                select(ClubMember).where(
+                    ClubMember.club_id == event.club_id,
+                    ClubMember.user_id == actor.id,
+                    ClubMember.member_role == ClubMemberRole.SECRETARY,
+                    ClubMember.is_active.is_(True),
+                )
+            )
+            if not member:
+                raise ForbiddenError(
+                    "Only the designated Club Secretary can upload bills for this event."
+                )
+
+        # 4. Read content & validate file size
+        content = await file.read()
+        file_size = len(content)
+        if file_size == 0:
+            raise BadRequestError("Uploaded bill file is empty.")
+        if file_size > settings.MAX_FILE_SIZE_BYTES:
+            max_mb = settings.MAX_FILE_SIZE_BYTES // (1024 * 1024)
+            raise BadRequestError(f"File size exceeds maximum permitted limit of {max_mb} MB.")
+
+        # 5. Validate extension & magic signature
+        raw_filename = Path(file.filename or "invoice.pdf").name
+        ext = raw_filename.rsplit(".", 1)[-1].lower() if "." in raw_filename else ""
+        if ext not in ("pdf", "png", "jpg", "jpeg"):
+            raise BadRequestError(
+                f"Unsupported bill format '{ext}'. Allowed formats: PDF, PNG, JPG, JPEG."
+            )
+
+        signatures = MAGIC_SIGNATURES.get(ext, [])
+        if signatures and not any(content.startswith(sig) for sig in signatures):
+            raise BadRequestError(
+                f"File content does not match declared format '{ext}' (magic signature mismatch)."
+            )
+
+        mime_type = MIME_TYPE_MAP.get(ext, "application/octet-stream")
+
+        # 6. Compute SHA-256 hash
+        file_hash = hashlib.sha256(content).hexdigest()
+
+        # 7. Check for duplicate documents across events
+        cross_duplicate = await db.scalar(
+            select(Document).where(
+                Document.file_hash == file_hash,
+                Document.document_type == DocumentType.EXPENSE_INVOICE,
+                Document.is_active.is_(True),
+                Document.event_id != event.id,
+            )
+        )
+        if cross_duplicate:
+            raise ConflictError(
+                "Duplicate bill detected: this document has already been submitted "
+                f"for another event (SHA-256: {file_hash[:12]}...)."
+            )
+
+        # 8. Check for identical file within the same event (reuse existing document)
+        same_event_doc = await db.scalar(
+            select(Document).where(
+                Document.file_hash == file_hash,
+                Document.document_type == DocumentType.EXPENSE_INVOICE,
+                Document.is_active.is_(True),
+                Document.event_id == event.id,
+            )
+        )
+        if same_event_doc:
+            return same_event_doc
+
+        # 9. Store file on disk
+        stored_uuid = str(uuid.uuid4())
+        stored_filename = f"{stored_uuid}.{ext}"
+        storage_root = get_storage_root()
+        expense_dir = storage_root / "events" / str(event.id) / "expenses"
+        expense_dir.mkdir(parents=True, exist_ok=True)
+        file_dest = expense_dir / stored_filename
+
+        try:
+            resolved_dest = file_dest.resolve()
+            if not resolved_dest.is_relative_to(storage_root):
+                raise BadRequestError("Invalid file path (directory traversal attempted).")
+        except (ValueError, AttributeError):
+            if not str(file_dest.resolve()).startswith(str(storage_root)):
+                raise BadRequestError(
+                    "Invalid file path (directory traversal attempted)."
+                ) from None
+
+        file_dest.write_bytes(content)
+
+        rel_path = f"events/{event.id}/expenses/{stored_filename}"
+
+        # 10. Persist Document record
+        doc = Document(
+            id=uuid.uuid4(),
+            event_request_id=event.event_request_id,
+            event_id=event.id,
+            uploaded_by=actor.id,
+            document_type=DocumentType.EXPENSE_INVOICE,
+            original_filename=raw_filename,
+            stored_filename=stored_filename,
+            file_size_bytes=file_size,
+            mime_type=mime_type,
+            storage_path=rel_path,
+            is_active=True,
+            file_hash=file_hash,
+        )
+        db.add(doc)
+
+        actor_role_str = actor.role.value if hasattr(actor.role, "value") else str(actor.role)
+        db.add(
+            AuditLog(
+                actor_id=actor.id,
+                actor_email=actor.email,
+                actor_role=actor_role_str,
+                action=AuditAction.EXPENSE_DOCUMENT_ATTACHED,
+                entity_type="document",
+                entity_id=str(doc.id),
+                previous_state=None,
+                new_state={
+                    "event_id": str(event.id),
+                    "original_filename": raw_filename,
+                    "document_type": DocumentType.EXPENSE_INVOICE.value,
+                    "file_size_bytes": file_size,
+                    "file_hash": file_hash,
+                },
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+        )
+        await db.flush()
+        return doc

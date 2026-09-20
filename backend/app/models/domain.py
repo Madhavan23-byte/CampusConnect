@@ -13,7 +13,7 @@ CRITICAL DESIGN NOTES:
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -21,6 +21,7 @@ from sqlalchemy import (
     JSON,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -34,11 +35,9 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-# Dialect-portable JSON type: native JSONB on PostgreSQL, standard JSON on SQLite
-JSONType = JSONB().with_variant(JSON(), "sqlite")
-
 from app.core.database import Base
 from app.models.enums import (
+    ActualExpenseStatus,
     AuditAction,
     BudgetLineItemCategory,
     ClubMemberRole,
@@ -57,6 +56,9 @@ from app.models.enums import (
     WorkflowStepStatus,
 )
 from app.models.mixins import SoftDeleteMixin, TimestampMixin, UUIDPrimaryKeyMixin
+
+# Dialect-portable JSON type: native JSONB on PostgreSQL, standard JSON on SQLite
+JSONType = JSONB().with_variant(JSON(), "sqlite")
 
 # ============================================================================
 # USER
@@ -724,10 +726,15 @@ class Document(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         Numeric(precision=9, scale=6), nullable=True
     )
     geo_source: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Optional SHA-256 digest for duplicate detection (Phase 2.2)
+    file_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
     # Relationships
     event_request: Mapped["EventRequest"] = relationship("EventRequest", back_populates="documents")
     uploader: Mapped["User"] = relationship("User", foreign_keys=[uploaded_by])
+    actual_expenses: Mapped[list["ActualExpense"]] = relationship(
+        "ActualExpense", back_populates="bill_document"
+    )
 
     __table_args__ = (
         CheckConstraint("file_size_bytes > 0", name="ck_documents_file_size_positive"),
@@ -967,6 +974,9 @@ class Event(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     post_event_report: Mapped["PostEventReport | None"] = relationship(
         "PostEventReport", back_populates="event", uselist=False, cascade="all, delete-orphan"
     )
+    actual_expenses: Mapped[list["ActualExpense"]] = relationship(
+        "ActualExpense", back_populates="event", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         Index("ix_events_club_id_status", "club_id", "status"),
@@ -1149,4 +1159,103 @@ class PostEventReport(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __table_args__ = (
         CheckConstraint("actual_attendance > 0", name="ck_post_event_reports_attendance_positive"),
         CheckConstraint("revision_number >= 1", name="ck_post_event_reports_revision_positive"),
+    )
+
+
+# ============================================================================
+# ACTUAL EXPENSES (PHASE 2.2)
+# ============================================================================
+
+
+class ActualExpense(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """
+    Auditable actual expenditure line item for a COMPLETED event.
+    Claimed amount > 0, Verified amount in [0, claimed_amount].
+    Disallowed amount is dynamically derived (never persisted redundantly).
+    """
+
+    __tablename__ = "actual_expenses"
+
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("events.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    budget_line_item_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("budget_line_items.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    category: Mapped[BudgetLineItemCategory] = mapped_column(String(30), nullable=False)
+    description: Mapped[str] = mapped_column(String(500), nullable=False)
+    vendor_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    vendor_gstin: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    invoice_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    invoice_date: Mapped[date] = mapped_column(Date, nullable=False)
+    claimed_amount: Mapped[Decimal] = mapped_column(
+        Numeric(precision=12, scale=2), nullable=False
+    )
+    verified_amount: Mapped[Decimal | None] = mapped_column(
+        Numeric(precision=12, scale=2), nullable=True
+    )
+    status: Mapped[ActualExpenseStatus] = mapped_column(
+        String(30), default=ActualExpenseStatus.DRAFT, nullable=False, index=True
+    )
+    bill_document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("documents.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    submitted_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    submitted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    verified_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    finance_remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+    query_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_flagged_for_review: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    review_notes: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # Relationships
+    event: Mapped["Event"] = relationship("Event", back_populates="actual_expenses")
+    bill_document: Mapped["Document"] = relationship(
+        "Document", foreign_keys=[bill_document_id], back_populates="actual_expenses"
+    )
+    budget_line_item: Mapped["BudgetLineItem | None"] = relationship("BudgetLineItem")
+    submitter: Mapped["User"] = relationship("User", foreign_keys=[submitted_by])
+    verifier: Mapped["User | None"] = relationship("User", foreign_keys=[verified_by])
+
+    @property
+    def disallowed_amount(self) -> Decimal:
+        if self.status in (
+            ActualExpenseStatus.VERIFIED,
+            ActualExpenseStatus.PARTIALLY_VERIFIED,
+            ActualExpenseStatus.DISALLOWED,
+        ):
+            v = self.verified_amount if self.verified_amount is not None else Decimal("0.00")
+            return max(Decimal("0.00"), self.claimed_amount - v)
+        return Decimal("0.00")
+
+    __table_args__ = (
+        CheckConstraint("claimed_amount > 0.00", name="chk_actual_expenses_claimed_positive"),
+        CheckConstraint(
+            "verified_amount IS NULL OR verified_amount >= 0.00",
+            name="chk_actual_expenses_verified_non_negative",
+        ),
+        CheckConstraint(
+            "verified_amount IS NULL OR verified_amount <= claimed_amount",
+            name="chk_actual_expenses_verified_le_claimed",
+        ),
     )
