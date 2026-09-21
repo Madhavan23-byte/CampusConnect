@@ -991,13 +991,13 @@ class Event(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         "ActualExpense", back_populates="event", cascade="all, delete-orphan"
     )
     cash_advance: Mapped["CashAdvance | None"] = relationship(
-        "CashAdvance", back_populates="event", uselist=False, cascade="all, delete-orphan"
+        "CashAdvance", back_populates="event", uselist=False
     )
     actual_incomes: Mapped[list["ActualIncome"]] = relationship(
-        "ActualIncome", back_populates="event", cascade="all, delete-orphan"
+        "ActualIncome", back_populates="event"
     )
     financial_settlement: Mapped["FinancialSettlement | None"] = relationship(
-        "FinancialSettlement", back_populates="event", uselist=False, cascade="all, delete-orphan"
+        "FinancialSettlement", back_populates="event", uselist=False
     )
 
     __table_args__ = (
@@ -1299,7 +1299,7 @@ class CashAdvance(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     event_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("events.id", ondelete="CASCADE"),
+        ForeignKey("events.id", ondelete="RESTRICT"),
         nullable=False,
         unique=True,
         index=True,
@@ -1375,7 +1375,7 @@ class ActualIncome(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     event_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("events.id", ondelete="CASCADE"),
+        ForeignKey("events.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )
@@ -1392,7 +1392,10 @@ class ActualIncome(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         String(100), nullable=True
     )
     evidence_document_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("documents.id"), nullable=False, index=True
+        UUID(as_uuid=True),
+        ForeignKey("documents.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
     )
     status: Mapped[ActualIncomeStatus] = mapped_column(
         String(20), default=ActualIncomeStatus.RECORDED, nullable=False, index=True
@@ -1439,13 +1442,15 @@ class FinancialSettlement(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     event_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("events.id", ondelete="CASCADE"),
+        ForeignKey("events.id", ondelete="RESTRICT"),
         nullable=False,
         unique=True,
         index=True,
     )
     approved_version_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("event_request_versions.id"), nullable=False
+        UUID(as_uuid=True),
+        ForeignKey("event_request_versions.id", ondelete="RESTRICT"),
+        nullable=False,
     )
 
     # Immutable Financial Snapshots captured at settlement preparation
@@ -1523,13 +1528,11 @@ class FinancialSettlement(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     payments: Mapped[list["SettlementPayment"]] = relationship(
         "SettlementPayment",
         back_populates="settlement",
-        cascade="all, delete-orphan",
         order_by="SettlementPayment.created_at",
     )
     revisions: Mapped[list["SettlementRevision"]] = relationship(
         "SettlementRevision",
         back_populates="settlement",
-        cascade="all, delete-orphan",
         order_by="SettlementRevision.revision_number",
     )
 
@@ -1540,12 +1543,24 @@ class FinancialSettlement(Base, UUIDPrimaryKeyMixin, TimestampMixin):
             name="chk_fin_settlements_exp_non_negative",
         ),
         CheckConstraint(
+            "total_claimed_expenditure >= 0.00",
+            name="chk_fin_settlements_c_exp_non_negative",
+        ),
+        CheckConstraint(
             "total_verified_expenditure >= 0.00",
             name="chk_fin_settlements_v_exp_non_negative",
         ),
         CheckConstraint(
+            "total_disallowed_expenditure >= 0.00",
+            name="chk_fin_settlements_d_exp_non_negative",
+        ),
+        CheckConstraint(
             "total_verified_income >= 0.00",
             name="chk_fin_settlements_v_inc_non_negative",
+        ),
+        CheckConstraint(
+            "net_deficit >= 0.00",
+            name="chk_fin_settlements_net_deficit_non_negative",
         ),
         CheckConstraint(
             "institutional_payout >= 0.00",
@@ -1583,7 +1598,7 @@ class SettlementPayment(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     settlement_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("financial_settlements.id", ondelete="CASCADE"),
+        ForeignKey("financial_settlements.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )
@@ -1599,9 +1614,14 @@ class SettlementPayment(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     transaction_reference: Mapped[str] = mapped_column(
         String(100), nullable=False, index=True
     )
-    transaction_date: Mapped[date] = mapped_column(Date, nullable=False)
+    transaction_date: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     proof_document_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("documents.id"), nullable=False, index=True
+        UUID(as_uuid=True),
+        ForeignKey("documents.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
     )
     recorded_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
@@ -1639,7 +1659,7 @@ class SettlementRevision(Base, UUIDPrimaryKeyMixin):
 
     settlement_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("financial_settlements.id", ondelete="CASCADE"),
+        ForeignKey("financial_settlements.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )
