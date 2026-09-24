@@ -39,6 +39,7 @@ from app.core.exceptions import (
     WorkflowStateError,
 )
 from app.core.logging import get_logger
+from app.services.settlement_service import SettlementStaleDataError
 
 settings = get_settings()
 logger = get_logger(__name__)
@@ -155,6 +156,7 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(HallConflictError)
     @app.exception_handler(OptimisticLockError)
+    @app.exception_handler(SettlementStaleDataError)
     @app.exception_handler(ConflictError)
     async def conflict_handler(request: Request, exc: ConflictError):
         return JSONResponse(

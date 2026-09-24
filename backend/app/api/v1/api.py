@@ -14,6 +14,7 @@ from app.api.v1.endpoints.expenses import router as expenses_router
 from app.api.v1.endpoints.halls import router as halls_router
 from app.api.v1.endpoints.notifications import router as notifications_router
 from app.api.v1.endpoints.resources import router as resources_router
+from app.api.v1.endpoints.settlement import router as settlement_router
 from app.api.v1.endpoints.workflows import router as workflows_router
 
 api_router = APIRouter()
@@ -28,3 +29,4 @@ api_router.include_router(workflows_router, prefix="/workflows", tags=["Workflow
 api_router.include_router(notifications_router, prefix="/notifications", tags=["Notifications"])
 api_router.include_router(event_execution_router, prefix="/events", tags=["Event Execution"])
 api_router.include_router(expenses_router, prefix="/events", tags=["Expenses"])
+api_router.include_router(settlement_router, prefix="/events", tags=["Financial Settlement"])
