@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ExpenseLedgerTab } from '@/components/expenses/ExpenseLedgerTab'
+import { FinancialSettlementTab } from '@/components/settlement/FinancialSettlementTab'
 import { apiClient } from '@/lib/apiClient'
 import { useAuthStore } from '@/store/authStore'
 import type {
@@ -37,6 +38,7 @@ import {
   RotateCcw,
   Check,
   ArrowRight,
+  Scale,
 } from 'lucide-react'
 
 export const EventDetailPage: React.FC = () => {
@@ -48,7 +50,7 @@ export const EventDetailPage: React.FC = () => {
   const [documents, setDocuments] = useState<EventDocument[]>([])
   const [resources, setResources] = useState<ResourceRequest[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'overview' | 'venue' | 'budget' | 'documents' | 'resources' | 'execution' | 'expenses'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'venue' | 'budget' | 'documents' | 'resources' | 'execution' | 'expenses' | 'settlement'>('overview')
 
   // Execution & Post-Event Report state (Phase 2.1)
   const [confirmedEvent, setConfirmedEvent] = useState<ConfirmedEvent | null>(null)
@@ -797,6 +799,16 @@ export const EventDetailPage: React.FC = () => {
               }`}
             >
               <DollarSign className="w-4 h-4" /> Expenses &amp; Ledger
+            </button>
+            <button
+              onClick={() => setActiveTab('settlement')}
+              className={`px-4 py-2.5 border-b-2 flex items-center gap-2 font-bold ${
+                activeTab === 'settlement'
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-surface-500 hover:text-surface-800'
+              }`}
+            >
+              <Scale className="w-4 h-4" /> Financial Settlement
             </button>
           </>
         )}
@@ -2014,6 +2026,20 @@ export const EventDetailPage: React.FC = () => {
           isCertified={postEventReport?.status === 'CERTIFIED'}
           isSecretary={user?.role === 'CLUB_SECRETARY'}
           isFinanceOfficer={user?.role === 'FINANCE_OFFICER'}
+          isAdmin={user?.role === 'SYSTEM_ADMIN'}
+        />
+      )}
+
+      {/* Tab: Financial Settlement (Phase 2.3) */}
+      {activeTab === 'settlement' && (
+        <FinancialSettlementTab
+          eventId={event.id}
+          eventStatus={event.status}
+          confirmedEventStatus={confirmedEvent?.status}
+          isCertified={postEventReport?.status === 'CERTIFIED'}
+          isSecretary={user?.role === 'CLUB_SECRETARY'}
+          isFinanceOfficer={user?.role === 'FINANCE_OFFICER'}
+          isPrincipal={user?.role === 'PRINCIPAL'}
           isAdmin={user?.role === 'SYSTEM_ADMIN'}
         />
       )}

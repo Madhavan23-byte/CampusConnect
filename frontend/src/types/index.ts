@@ -513,3 +513,212 @@ export interface BillUploadResponse {
   file_hash?: string | null
   created_at: string
 }
+
+// ============================================================================
+// FINANCIAL SETTLEMENT, CASH ADVANCE, & ACTUAL INCOME (PHASE 2.3)
+// ============================================================================
+
+export type CashAdvanceStatus = 'REQUESTED' | 'APPROVED' | 'DISBURSED' | 'REJECTED'
+
+export type IncomeSourceType =
+  | 'REGISTRATION_FEE'
+  | 'SPONSORSHIP'
+  | 'STALL_RENTAL'
+  | 'TICKET_SALES'
+  | 'DONATION'
+  | 'OTHER'
+
+export type ActualIncomeStatus = 'RECORDED' | 'VERIFIED' | 'REJECTED'
+
+export type SettlementStatus =
+  | 'DRAFT'
+  | 'UNDER_AUDIT'
+  | 'APPROVED'
+  | 'QUERIED'
+  | 'PENDING_REIMBURSEMENT'
+  | 'PENDING_REFUND'
+  | 'SETTLED'
+  | 'REOPENED'
+
+export type SettlementType = 'REIMBURSEMENT_DUE' | 'REFUND_DUE' | 'BALANCED'
+
+export type SettlementPaymentType =
+  | 'REIMBURSEMENT_DISBURSEMENT'
+  | 'ADVANCE_REFUND_RECEIPT'
+
+export type PaymentMethod =
+  | 'BANK_TRANSFER_NEFT'
+  | 'CHEQUE'
+  | 'CASH_VOUCHER'
+  | 'INSTITUTIONAL_TRANSFER'
+
+export interface CashAdvance {
+  id: string
+  event_id: string
+  recipient_id: string
+  amount_requested: string
+  amount_approved?: string | null
+  amount_disbursed: string
+  status: CashAdvanceStatus
+  notes?: string | null
+  rejection_reason?: string | null
+  approved_by?: string | null
+  disbursed_by?: string | null
+  disbursement_date?: string | null
+  payment_reference?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CashAdvanceRequestCreate {
+  amount_requested: number | string
+  reason: string
+}
+
+export interface CashAdvanceApprove {
+  amount_approved: number | string
+  remarks?: string
+}
+
+export interface CashAdvanceReject {
+  rejection_reason: string
+}
+
+export interface CashAdvanceDisburse {
+  amount_disbursed: number | string
+  payment_reference: string
+  disbursement_date?: string
+  notes?: string
+}
+
+export interface ActualIncome {
+  id: string
+  event_id: string
+  source_type: IncomeSourceType
+  description: string
+  payer_name: string
+  amount: string
+  received_date: string
+  reference_number?: string | null
+  evidence_document_id: string
+  status: ActualIncomeStatus
+  recorded_by: string
+  verified_by?: string | null
+  verified_at?: string | null
+  finance_remarks?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ActualIncomeCreate {
+  source_type: IncomeSourceType
+  amount: number | string
+  description: string
+  payer_name: string
+  received_date: string
+  evidence_document_id: string
+  reference_number?: string
+}
+
+export interface ActualIncomeVerify {
+  finance_remarks?: string
+}
+
+export interface ActualIncomeReject {
+  rejection_reason: string
+  finance_remarks?: string
+}
+
+export interface SettlementPayment {
+  id: string
+  settlement_id: string
+  payment_type: SettlementPaymentType
+  amount: string
+  payment_method: PaymentMethod
+  transaction_reference: string
+  transaction_date: string
+  proof_document_id: string
+  recorded_by: string
+  notes?: string | null
+  created_at: string
+}
+
+export interface SettlementPaymentCreate {
+  payment_type: SettlementPaymentType
+  amount: number | string
+  payment_method: PaymentMethod
+  transaction_reference: string
+  transaction_date: string
+  proof_document_id: string
+  notes?: string
+}
+
+export interface SettlementRevision {
+  id: string
+  settlement_id: string
+  revision_number: number
+  snapshot_data: Record<string, unknown>
+  reopened_by: string
+  reopening_reason: string
+  created_at: string
+}
+
+export interface FinancialSettlement {
+  id: string
+  event_id: string
+  approved_version_id: string
+  sanctioned_grant: string
+  sanctioned_expenditure: string
+  expected_income: string
+  total_claimed_expenditure: string
+  total_verified_expenditure: string
+  total_disallowed_expenditure: string
+  total_verified_income: string
+  net_deficit: string
+  institutional_payout: string
+  cash_advance_disbursed: string
+  settlement_balance: string
+  reimbursement_due: string
+  refund_due: string
+  settlement_type: SettlementType
+  status: SettlementStatus
+  prepared_by: string
+  submitted_at?: string | null
+  audited_by?: string | null
+  audited_at?: string | null
+  finance_remarks?: string | null
+  query_reason?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface FinancialSettlementDetail extends FinancialSettlement {
+  payments: SettlementPayment[]
+  revisions: SettlementRevision[]
+}
+
+export interface SettlementAuditRequest {
+  action: 'APPROVE' | 'QUERY'
+  remarks?: string
+  query_reason?: string
+}
+
+export interface SettlementReopenRequest {
+  reopening_reason: string
+}
+
+export interface ClosureEligibility {
+  eligible: boolean
+  blockers: string[]
+  event_id: string
+  settlement_id?: string | null
+}
+
+export interface EvidenceUploadResponse {
+  document_id: string
+  filename: string
+  file_size: number
+  content_type: string
+  document_type: DocumentType
+  uploaded_at: string
+}
