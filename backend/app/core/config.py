@@ -122,6 +122,9 @@ class Settings(BaseSettings):
     IDEMPOTENCY_KEY_TTL_HOURS: int = 24
     # Default academic year format: "2026-27"
     CURRENT_ACADEMIC_YEAR: str = "2026-27"
+    # Event Closeout & Archival Rules (Phase 2.4)
+    ALLOW_ADVISOR_EVENT_CLOSEOUT: bool = False
+    ARCHIVAL_RETENTION_DAYS: int = 365
 
     # ------------------------------------------------------------------ #
     # Argon2 password hashing

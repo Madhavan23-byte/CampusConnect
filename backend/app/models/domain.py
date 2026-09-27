@@ -999,6 +999,9 @@ class Event(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     financial_settlement: Mapped["FinancialSettlement | None"] = relationship(
         "FinancialSettlement", back_populates="event", uselist=False
     )
+    closure: Mapped["EventClosure | None"] = relationship(
+        "EventClosure", back_populates="event", uselist=False
+    )
 
     __table_args__ = (
         Index("ix_events_club_id_status", "club_id", "status"),
@@ -1696,4 +1699,159 @@ class SettlementRevision(Base, UUIDPrimaryKeyMixin):
         return (
             f"<SettlementRevision id={self.id} settlement_id={self.settlement_id} "
             f"rev={self.revision_number}>"
+        )
+
+
+# ============================================================================
+# PHASE 2.4: EVENT CLOSEOUT & ARCHIVAL
+# ============================================================================
+
+
+class EventClosure(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """
+    Represents the institutional closeout certification associated with an event.
+    Created when the final institutional authority certifies an event as CLOSED.
+    Permanent institutional record with restrictive deletion semantics.
+    """
+
+    __tablename__ = "event_closures"
+
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("events.id", ondelete="RESTRICT"),
+        nullable=False,
+        unique=True,
+    )
+    settlement_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("financial_settlements.id", ondelete="RESTRICT"),
+        nullable=False,
+        unique=True,
+    )
+    post_event_report_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("post_event_reports.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    requested_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    certified_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    certified_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    closure_notes: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    venue_cleared: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+    certificate_manifest_hash: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+    )
+
+    # Relationships
+    event: Mapped["Event"] = relationship("Event", back_populates="closure")
+    settlement: Mapped["FinancialSettlement"] = relationship("FinancialSettlement")
+    post_event_report: Mapped["PostEventReport"] = relationship("PostEventReport")
+    requested_by_user: Mapped["User | None"] = relationship("User", foreign_keys=[requested_by])
+    certified_by_user: Mapped["User"] = relationship("User", foreign_keys=[certified_by])
+    revisions: Mapped[list["EventClosureRevision"]] = relationship(
+        "EventClosureRevision", back_populates="closure", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("event_id", name="uq_event_closures_event_id"),
+        UniqueConstraint("settlement_id", name="uq_event_closures_settlement_id"),
+        Index("ix_event_closures_certified_at", "certified_at"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<EventClosure id={self.id} event_id={self.event_id} "
+            f"certified_by={self.certified_by} certified_at={self.certified_at}>"
+        )
+
+
+class EventClosureRevision(Base, UUIDPrimaryKeyMixin):
+    """
+    Immutable historical snapshot created when a CLOSED event is formally reopened.
+    Preserves serialized state and audit justification for every reopening event.
+    """
+
+    __tablename__ = "event_closure_revisions"
+
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("events.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    closure_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("event_closures.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    revision_number: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+    reopened_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    reopened_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    reopening_reason: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+    snapshot_data: Mapped[dict[str, Any]] = mapped_column(
+        JSONType,
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    # Relationships
+    event: Mapped["Event"] = relationship("Event")
+    closure: Mapped["EventClosure"] = relationship("EventClosure", back_populates="revisions")
+    reopened_by_user: Mapped["User"] = relationship("User", foreign_keys=[reopened_by])
+
+    __table_args__ = (
+        UniqueConstraint(
+            "event_id", "revision_number", name="uq_event_closure_revisions_number"
+        ),
+        CheckConstraint(
+            "revision_number >= 1", name="chk_event_closure_revisions_number_positive"
+        ),
+        Index("ix_event_closure_revisions_event_id", "event_id"),
+        Index("ix_event_closure_revisions_closure_id", "closure_id"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<EventClosureRevision id={self.id} event_id={self.event_id} "
+            f"rev={self.revision_number} reopened_by={self.reopened_by}>"
         )

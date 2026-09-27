@@ -387,8 +387,18 @@ class DocumentService:
         )
         if not event:
             raise NotFoundError(f"Confirmed event '{event_id}' not found.")
+        if event.status in (EventStatus.CLOSED, EventStatus.ARCHIVED):
+            st = event.status.value if hasattr(event.status, "value") else str(event.status)
+            raise ConflictError(
+                f"Event '{event.id}' is in terminal status '{st}' and cannot accept documents."
+            )
 
         # 2. Check event status (must be IN_PROGRESS or COMPLETED)
+        if event.status in (EventStatus.CLOSED, EventStatus.ARCHIVED):
+            st = event.status.value if hasattr(event.status, "value") else str(event.status)
+            raise ConflictError(
+                f"Event '{event.id}' is in terminal status '{st}' and cannot accept documents."
+            )
         if event.status not in (EventStatus.IN_PROGRESS, EventStatus.COMPLETED):
             st = event.status.value if hasattr(event.status, "value") else str(event.status)
             raise WorkflowStateError(
@@ -831,6 +841,11 @@ class DocumentService:
         )
         if not event:
             raise NotFoundError(f"Confirmed event '{event_id}' not found.")
+        if event.status in (EventStatus.CLOSED, EventStatus.ARCHIVED):
+            st = event.status.value if hasattr(event.status, "value") else str(event.status)
+            raise ConflictError(
+                f"Event '{event.id}' is in terminal status '{st}' and cannot accept documents."
+            )
 
         if actor.role != UserRole.FINANCE_OFFICER:
             raise ForbiddenError(

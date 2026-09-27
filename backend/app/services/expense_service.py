@@ -162,8 +162,21 @@ def to_actual_expense_response(expense: ActualExpense) -> ActualExpenseResponse:
 
 class ExpenseService:
     @classmethod
+    def _ensure_event_mutable(cls, event: Event) -> None:
+        """Enforce that CLOSED or ARCHIVED events cannot be modified."""
+        if event.status in (EventStatus.CLOSED, EventStatus.ARCHIVED):
+            st = event.status.value if hasattr(event.status, "value") else str(event.status)
+            raise ConflictError(
+                f"Event '{event.id}' is in terminal status '{st}' and cannot be modified."
+            )
+
+    @classmethod
     async def _get_confirmed_event(
-        cls, db: AsyncSession, event_id: uuid.UUID, for_update: bool = False
+        cls,
+        db: AsyncSession,
+        event_id: uuid.UUID,
+        for_update: bool = False,
+        ensure_mutable: bool = False,
     ) -> Event:
         """Resolve confirmed event with optional pessimistic row lock."""
         stmt = select(Event).where(
@@ -174,6 +187,8 @@ class ExpenseService:
         event = await db.scalar(stmt)
         if not event:
             raise NotFoundError(f"Confirmed event '{event_id}' not found.")
+        if ensure_mutable:
+            cls._ensure_event_mutable(event)
         return event
 
     @classmethod
@@ -327,7 +342,7 @@ class ExpenseService:
         user_agent: str | None = None,
     ) -> ActualExpenseResponse:
         """Create a new draft actual expense line item."""
-        event = await cls._get_confirmed_event(db, event_id)
+        event = await cls._get_confirmed_event(db, event_id, ensure_mutable=True)
         cls._require_event_completed(event)
         await cls._verify_club_secretary(db, event, actor)
 
@@ -408,7 +423,7 @@ class ExpenseService:
         user_agent: str | None = None,
     ) -> ActualExpenseResponse:
         """Update a DRAFT or QUERIED expense line item."""
-        event = await cls._get_confirmed_event(db, event_id)
+        event = await cls._get_confirmed_event(db, event_id, ensure_mutable=True)
         await cls._verify_club_secretary(db, event, actor)
 
         expense = await db.scalar(
@@ -548,7 +563,7 @@ class ExpenseService:
         user_agent: str | None = None,
     ) -> None:
         """Delete a DRAFT or QUERIED expense line item."""
-        event = await cls._get_confirmed_event(db, event_id)
+        event = await cls._get_confirmed_event(db, event_id, ensure_mutable=True)
         await cls._verify_club_secretary(db, event, actor)
 
         expense = await db.scalar(
@@ -605,7 +620,7 @@ class ExpenseService:
         Submit draft or queried expenses for Finance Officer verification.
         Transitions DRAFT -> SUBMITTED and QUERIED -> SUBMITTED.
         """
-        event = await cls._get_confirmed_event(db, event_id, for_update=True)
+        event = await cls._get_confirmed_event(db, event_id, for_update=True, ensure_mutable=True)
         cls._require_event_completed(event)
         await cls._verify_club_secretary(db, event, actor)
 
@@ -710,7 +725,7 @@ class ExpenseService:
         Status -> VERIFIED (terminal).
         """
         cls._verify_finance_officer(actor)
-        event = await cls._get_confirmed_event(db, event_id)
+        event = await cls._get_confirmed_event(db, event_id, ensure_mutable=True)
         await cls._verify_delivery_certified(db, event)
 
         expense = await db.scalar(
@@ -803,7 +818,7 @@ class ExpenseService:
         Mandatory justification required.
         """
         cls._verify_finance_officer(actor)
-        event = await cls._get_confirmed_event(db, event_id)
+        event = await cls._get_confirmed_event(db, event_id, ensure_mutable=True)
         await cls._verify_delivery_certified(db, event)
 
         expense = await db.scalar(
@@ -910,7 +925,7 @@ class ExpenseService:
         Mandatory query remarks required.
         """
         cls._verify_finance_officer(actor)
-        event = await cls._get_confirmed_event(db, event_id)
+        event = await cls._get_confirmed_event(db, event_id, ensure_mutable=True)
         await cls._verify_delivery_certified(db, event)
 
         expense = await db.scalar(
@@ -998,7 +1013,7 @@ class ExpenseService:
         Mandatory justification required.
         """
         cls._verify_finance_officer(actor)
-        event = await cls._get_confirmed_event(db, event_id)
+        event = await cls._get_confirmed_event(db, event_id, ensure_mutable=True)
         await cls._verify_delivery_certified(db, event)
 
         expense = await db.scalar(

@@ -124,11 +124,21 @@ class EventExecutionService:
     """Domain service managing the operational lifecycle of confirmed events."""
 
     @classmethod
+    def _ensure_event_mutable(cls, event: Event) -> None:
+        """Enforce that CLOSED or ARCHIVED events cannot be modified."""
+        if event.status in (EventStatus.CLOSED, EventStatus.ARCHIVED):
+            st = event.status.value if hasattr(event.status, "value") else str(event.status)
+            raise ConflictError(
+                f"Event '{event.id}' is in terminal status '{st}' and cannot be modified."
+            )
+
+    @classmethod
     async def _resolve_event(
         cls,
         db: AsyncSession,
         event_identifier: uuid.UUID,
         for_update: bool = False,
+        ensure_mutable: bool = False,
     ) -> Event:
         """Resolve confirmed event by either Event.id or Event.event_request_id."""
         query = select(Event).where(
@@ -139,6 +149,8 @@ class EventExecutionService:
         event = await db.scalar(query)
         if not event:
             raise NotFoundError(f"Confirmed event '{event_identifier}' not found.")
+        if ensure_mutable:
+            cls._ensure_event_mutable(event)
         return event
 
     @classmethod
@@ -207,7 +219,7 @@ class EventExecutionService:
         Transition event status from SCHEDULED to IN_PROGRESS.
         Restricted to active Club Secretary.
         """
-        event = await cls._resolve_event(db, event_id, for_update=True)
+        event = await cls._resolve_event(db, event_id, for_update=True, ensure_mutable=True)
 
         # Verify club secretary role (blocks unauthorized users and ordinary SYSTEM_ADMIN bypass)
         await cls._verify_secretary_ownership(db, event.club_id, actor, "start this event")
@@ -268,7 +280,7 @@ class EventExecutionService:
                 "Access denied: Administrative override requires SYSTEM_ADMIN role."
             )
 
-        event = await cls._resolve_event(db, event_id, for_update=True)
+        event = await cls._resolve_event(db, event_id, for_update=True, ensure_mutable=True)
 
         if event.status != EventStatus.SCHEDULED:
             st = event.status.value if hasattr(event.status, "value") else str(event.status)
@@ -317,7 +329,7 @@ class EventExecutionService:
         Transitions Event status to COMPLETED and creates PostEventReport in SUBMITTED status.
         Emits notification to the club's designated Faculty Advisor.
         """
-        event = await cls._resolve_event(db, event_id, for_update=True)
+        event = await cls._resolve_event(db, event_id, for_update=True, ensure_mutable=True)
 
         # Verify club secretary
         await cls._verify_secretary_ownership(
@@ -438,7 +450,7 @@ class EventExecutionService:
         Amend a report returned for revision.
         Only allowed when report status is REVISION_REQUIRED.
         """
-        event = await cls._resolve_event(db, event_id)
+        event = await cls._resolve_event(db, event_id, ensure_mutable=True)
         await cls._verify_secretary_ownership(db, event.club_id, actor, "edit this report")
 
         report = await db.scalar(
@@ -480,7 +492,7 @@ class EventExecutionService:
         Resubmit an amended report after revisions.
         Increments revision_number, snapshots historical state into AuditLog, and notifies Advisor.
         """
-        event = await cls._resolve_event(db, event_id)
+        event = await cls._resolve_event(db, event_id, ensure_mutable=True)
         await cls._verify_secretary_ownership(db, event.club_id, actor, "resubmit report")
 
         report = await db.scalar(
@@ -556,7 +568,7 @@ class EventExecutionService:
         Faculty Advisor certifies event delivery.
         Statutory role non-bypassable: only assigned advisor can certify.
         """
-        event = await cls._resolve_event(db, event_id)
+        event = await cls._resolve_event(db, event_id, ensure_mutable=True)
         report = await db.scalar(
             select(PostEventReport).where(PostEventReport.event_id == event.id).with_for_update()
         )
@@ -630,7 +642,7 @@ class EventExecutionService:
         Faculty Advisor requests corrections to post-event report.
         Remarks are mandatory (>= 5 chars).
         """
-        event = await cls._resolve_event(db, event_id)
+        event = await cls._resolve_event(db, event_id, ensure_mutable=True)
         report = await db.scalar(
             select(PostEventReport).where(PostEventReport.event_id == event.id).with_for_update()
         )

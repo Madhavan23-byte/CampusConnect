@@ -56,6 +56,7 @@ from app.models.domain import (
     AuditLog,
     BudgetProposal,
     CashAdvance,
+    Club,
     ClubMember,
     Document,
     Event,
@@ -128,9 +129,14 @@ class SettlementService:
             raise ForbiddenError(
                 "System administrators are strictly barred from reopening financial settlements."
             )
-        if actor.role not in (UserRole.FINANCE_OFFICER, UserRole.PRINCIPAL):
+        if actor.role not in (
+            UserRole.FINANCE_OFFICER,
+            UserRole.PRINCIPAL,
+            UserRole.DEAN_STUDENT_AFFAIRS,
+        ):
             raise ForbiddenError(
-                "Only Finance Officers and the Principal are authorized to reopen a settlement."
+                "Only Finance Officers, the Dean of Student Affairs, and the Principal "
+                "are authorized to reopen a settlement."
             )
 
     @classmethod
@@ -158,6 +164,15 @@ class SettlementService:
             )
 
     @classmethod
+    def _ensure_event_mutable(cls, event: Event) -> None:
+        """Enforce that CLOSED or ARCHIVED events cannot undergo operational mutations."""
+        if event.status in (EventStatus.CLOSED, EventStatus.ARCHIVED):
+            st = event.status.value if hasattr(event.status, "value") else str(event.status)
+            raise ConflictError(
+                f"Event '{event.id}' is in terminal status '{st}' and cannot be modified."
+            )
+
+    @classmethod
     async def _verify_event_viewer(cls, db: AsyncSession, event: Event, actor: User) -> None:
         """
         Verify read-only access to event financial details.
@@ -170,6 +185,11 @@ class SettlementService:
             UserRole.DEAN_STUDENT_AFFAIRS,
             UserRole.ADVISOR_STUDENTS_UNION,
         ):
+            return
+
+        # Check if designated faculty advisor of owning club
+        club = await db.scalar(select(Club).where(Club.id == event.club_id))
+        if club and club.faculty_advisor_id == actor.id:
             return
 
         # Check club membership
@@ -185,7 +205,11 @@ class SettlementService:
 
     @classmethod
     async def _get_confirmed_event(
-        cls, db: AsyncSession, event_id: uuid.UUID, for_update: bool = False
+        cls,
+        db: AsyncSession,
+        event_id: uuid.UUID,
+        for_update: bool = False,
+        ensure_mutable: bool = False,
     ) -> Event:
         """Fetch Event by primary key, optionally acquiring a row lock."""
         stmt = select(Event).where(Event.id == event_id)
@@ -194,6 +218,8 @@ class SettlementService:
         event = await db.scalar(stmt)
         if not event:
             raise NotFoundError(f"Event '{event_id}' not found.")
+        if ensure_mutable:
+            cls._ensure_event_mutable(event)
         return event
 
     @classmethod
@@ -331,7 +357,7 @@ class SettlementService:
         Club Secretary requests a cash advance for an event.
         One advance per event invariant enforced.
         """
-        event = await cls._get_confirmed_event(db, event_id, for_update=True)
+        event = await cls._get_confirmed_event(db, event_id, for_update=True, ensure_mutable=True)
         await cls._verify_club_secretary(db, event, actor)
 
         if event.cancelled_at is not None or event.status == EventStatus.CANCELLED:
@@ -410,6 +436,10 @@ class SettlementService:
         if not advance:
             raise NotFoundError(f"Cash advance '{advance_id}' not found.")
 
+        event = await cls._get_confirmed_event(db, advance.event_id, ensure_mutable=True)
+
+        event = await cls._get_confirmed_event(db, advance.event_id, ensure_mutable=True)
+
         if advance.status != CashAdvanceStatus.REQUESTED:
             raise InvalidWorkflowTransitionError(
                 f"Cannot approve advance in '{advance.status}' status. Must be 'REQUESTED'."
@@ -418,7 +448,7 @@ class SettlementService:
         if amount_approved <= Decimal("0.00"):
             raise BadRequestError("Approved advance amount must be greater than zero.")
 
-        event = await cls._get_confirmed_event(db, advance.event_id)
+        event = await cls._get_confirmed_event(db, advance.event_id, ensure_mutable=True)
         _, sanctioned_grant, _, _ = await cls._resolve_sanctioned_snapshot(db, event)
 
         if amount_approved > sanctioned_grant:
@@ -650,7 +680,7 @@ class SettlementService:
         Club Secretary records self-generated income for an event.
         Enforces evidence document validity and strict event ownership.
         """
-        event = await cls._get_confirmed_event(db, event_id, for_update=True)
+        event = await cls._get_confirmed_event(db, event_id, for_update=True, ensure_mutable=True)
         await cls._verify_club_secretary(db, event, actor)
 
         if event.cancelled_at is not None or event.status == EventStatus.CANCELLED:
@@ -751,6 +781,10 @@ class SettlementService:
         )
         if not income:
             raise NotFoundError(f"Actual income '{income_id}' not found.")
+
+        event = await cls._get_confirmed_event(db, income.event_id, ensure_mutable=True)
+
+        event = await cls._get_confirmed_event(db, income.event_id, ensure_mutable=True)
 
         if actor.id == income.recorded_by:
             raise ForbiddenError("Club Secretary cannot self-verify recorded income.")
@@ -1162,7 +1196,7 @@ class SettlementService:
         7. Authoritative approved snapshot resolution
         8. Record-level source fingerprint generation
         """
-        event = await cls._get_confirmed_event(db, event_id, for_update=True)
+        event = await cls._get_confirmed_event(db, event_id, for_update=True, ensure_mutable=True)
         await cls._verify_club_secretary(db, event, actor)
 
         if event.status != EventStatus.COMPLETED:
@@ -1385,7 +1419,7 @@ class SettlementService:
         if not settlement:
             raise NotFoundError(f"Financial settlement '{settlement_id}' not found.")
 
-        event = await cls._get_confirmed_event(db, settlement.event_id)
+        event = await cls._get_confirmed_event(db, settlement.event_id, ensure_mutable=True)
         await cls._verify_club_secretary(db, event, actor)
 
         if settlement.status not in (
@@ -1471,7 +1505,7 @@ class SettlementService:
                 f"Cannot audit settlement in '{settlement.status}' status. Must be 'UNDER_AUDIT'."
             )
 
-        event = await cls._get_confirmed_event(db, settlement.event_id)
+        event = await cls._get_confirmed_event(db, settlement.event_id, ensure_mutable=True)
 
         # Enforce source consistency: cannot approve or query if source records mutated
         await cls._verify_live_source_consistency(db, settlement, event)
@@ -1639,6 +1673,8 @@ class SettlementService:
                 f"Cannot record payment for settlement in '{settlement.status}' status. "
                 "Settlement must be PENDING_REIMBURSEMENT or PENDING_REFUND."
             )
+
+        event = await cls._get_confirmed_event(db, settlement.event_id, ensure_mutable=True)
 
         p_type_str = _val(payment_type)
         if settlement.settlement_type == SettlementType.BALANCED:
@@ -1849,6 +1885,14 @@ class SettlementService:
             raise BusinessRuleError(
                 f"Cannot reopen settlement in '{settlement.status}' status. "
                 "Only 'SETTLED' settlements can be reopened."
+            )
+
+        event = await cls._get_confirmed_event(db, settlement.event_id)
+        if event.status in (EventStatus.CLOSED, EventStatus.ARCHIVED):
+            st = event.status.value if hasattr(event.status, "value") else str(event.status)
+            raise ConflictError(
+                f"Cannot reopen settlement directly while event is in terminal status '{st}'. "
+                "Event reopening petition and approval by Dean/Principal is required."
             )
 
         # Determine next revision number
