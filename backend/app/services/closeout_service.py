@@ -310,6 +310,67 @@ class CloseoutService:
             "report_id": str(report.id) if report else None,
         }
 
+    @classmethod
+    async def get_closure_details(
+        cls,
+        db: AsyncSession,
+        event_id: uuid.UUID,
+        actor: User,
+    ) -> dict[str, Any]:
+        """
+        Retrieve comprehensive closeout state, eligibility, active closure,
+        reopening revisions, and request history.
+        Enforces viewer authorization via SettlementService._verify_event_viewer.
+        """
+        event = await cls._get_event(db, event_id, for_update=False)
+        await SettlementService._verify_event_viewer(db, event, actor)
+
+        eligibility = await cls.get_closure_eligibility(db, event.id, actor)
+
+        closure = await db.scalar(
+            select(EventClosure).where(EventClosure.event_id == event.id)
+        )
+
+        revisions = list(
+            (
+                await db.scalars(
+                    select(EventClosureRevision)
+                    .where(EventClosureRevision.event_id == event.id)
+                    .order_by(EventClosureRevision.revision_number.asc())
+                )
+            ).all()
+        )
+
+        latest_req_audit = await db.scalar(
+            select(AuditLog)
+            .where(
+                AuditLog.entity_id == str(event.id),
+                AuditLog.action == AuditAction.CLOSURE_REQUESTED,
+            )
+            .order_by(AuditLog.created_at.desc())
+            .limit(1)
+        )
+        latest_request = None
+        if latest_req_audit:
+            remarks = None
+            if latest_req_audit.new_state and isinstance(latest_req_audit.new_state, dict):
+                remarks = latest_req_audit.new_state.get("remarks")
+            latest_request = {
+                "requested_by": latest_req_audit.actor_id,
+                "requested_at": latest_req_audit.created_at,
+                "remarks": remarks,
+            }
+
+        return {
+            "event_id": event.id,
+            "event_status": event.status,
+            "is_archived": event.status == EventStatus.ARCHIVED,
+            "eligibility": eligibility,
+            "closure": closure,
+            "revisions": revisions,
+            "latest_request": latest_request,
+        }
+
     # =========================================================================
     # CLOSEOUT REQUEST
     # =========================================================================

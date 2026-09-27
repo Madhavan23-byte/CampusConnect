@@ -154,17 +154,18 @@ def create_app() -> FastAPI:
             content={"error": "not_found", "message": exc.message},
         )
 
+    @app.exception_handler(InvalidWorkflowTransitionError)
     @app.exception_handler(HallConflictError)
     @app.exception_handler(OptimisticLockError)
     @app.exception_handler(SettlementStaleDataError)
     @app.exception_handler(ConflictError)
-    async def conflict_handler(request: Request, exc: ConflictError):
+    async def conflict_handler(request: Request, exc: Exception):
+        msg = getattr(exc, "message", str(exc))
         return JSONResponse(
             status_code=status.HTTP_409_CONFLICT,
-            content={"error": "conflict", "message": exc.message},
+            content={"error": "conflict", "message": msg},
         )
 
-    @app.exception_handler(InvalidWorkflowTransitionError)
     @app.exception_handler(AdvanceBookingViolationError)
     @app.exception_handler(BusinessRuleError)
     async def business_rule_handler(request: Request, exc: BusinessRuleError):

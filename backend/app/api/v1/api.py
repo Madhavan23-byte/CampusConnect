@@ -5,6 +5,7 @@ CampusConnect Backend — API v1 Router Aggregator
 from fastapi import APIRouter
 
 from app.api.v1.endpoints.auth import router as auth_router
+from app.api.v1.endpoints.closeout import router as closeout_router
 from app.api.v1.endpoints.clubs import router as clubs_router
 from app.api.v1.endpoints.dashboard import router as dashboard_router
 from app.api.v1.endpoints.documents import router as documents_router
@@ -30,3 +31,4 @@ api_router.include_router(notifications_router, prefix="/notifications", tags=["
 api_router.include_router(event_execution_router, prefix="/events", tags=["Event Execution"])
 api_router.include_router(expenses_router, prefix="/events", tags=["Expenses"])
 api_router.include_router(settlement_router, prefix="/events", tags=["Financial Settlement"])
+api_router.include_router(closeout_router, prefix="/events", tags=["Event Closeout"])
