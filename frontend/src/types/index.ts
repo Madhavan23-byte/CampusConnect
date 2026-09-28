@@ -39,7 +39,7 @@ export type EventRequestStatus =
   | 'REJECTED'
   | 'CANCELLED'
 
-export type EventStatus = 'SCHEDULED' | 'IN_PROGRESS' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'ARCHIVED'
+export type EventStatus = 'SCHEDULED' | 'IN_PROGRESS' | 'ACTIVE' | 'COMPLETED' | 'CLOSURE_REQUESTED' | 'CLOSED' | 'CANCELLED' | 'ARCHIVED'
 
 export type WorkflowStepStatus =
   | 'PENDING'
@@ -721,4 +721,98 @@ export interface EvidenceUploadResponse {
   content_type: string
   document_type: DocumentType
   uploaded_at: string
+}
+
+// ============================================================================
+// EVENT CLOSEOUT, REOPENING & ARCHIVAL (PHASE 2.4)
+// ============================================================================
+
+export interface VenueStatusInfo {
+  has_booking: boolean
+  booking_ended: boolean
+  hall_id?: string | null
+}
+
+export interface CloseoutEligibilityInfo {
+  eligible: boolean
+  blockers: string[]
+  warnings: string[]
+  event_status: string
+  settlement_status?: string | null
+  report_status?: string | null
+  venue_status: VenueStatusInfo
+  event_id: string
+  settlement_id?: string | null
+  report_id?: string | null
+}
+
+export interface LatestClosureRequestInfo {
+  requested_by?: string | null
+  requested_at?: string | null
+  remarks?: string | null
+}
+
+export interface EventClosureResponse {
+  id: string
+  event_id: string
+  settlement_id: string
+  post_event_report_id: string
+  requested_by?: string | null
+  requested_at?: string | null
+  certified_by: string
+  certified_at: string
+  closure_notes?: string | null
+  venue_cleared: boolean
+  certificate_manifest_hash: string
+  created_at: string
+  updated_at: string
+}
+
+export interface EventClosureRevisionResponse {
+  id: string
+  event_id: string
+  closure_id: string
+  revision_number: number
+  reopened_by: string
+  reopened_at: string
+  reopening_reason: string
+  snapshot_data: Record<string, unknown>
+  created_at: string
+}
+
+export interface EventCloseoutActionResponse {
+  event_id: string
+  status: EventStatus
+  message: string
+}
+
+export interface EventClosureDetailResponse {
+  event_id: string
+  event_status: EventStatus
+  is_archived: boolean
+  eligibility: CloseoutEligibilityInfo
+  closure?: EventClosureResponse | null
+  revisions: EventClosureRevisionResponse[]
+  latest_request?: LatestClosureRequestInfo | null
+}
+
+export interface EventCloseoutRequestCreate {
+  remarks?: string | null
+}
+
+export interface EventCloseoutCertifyRequest {
+  venue_cleared: boolean
+  closure_notes?: string | null
+}
+
+export interface EventCloseoutRejectRequest {
+  reason: string
+}
+
+export interface EventReopenRequestCreate {
+  reason: string
+}
+
+export interface EventReopenApproveRequest {
+  reason: string
 }

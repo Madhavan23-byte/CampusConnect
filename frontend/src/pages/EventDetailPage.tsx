@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ExpenseLedgerTab } from '@/components/expenses/ExpenseLedgerTab'
 import { FinancialSettlementTab } from '@/components/settlement/FinancialSettlementTab'
+import { CloseoutTab } from '@/components/closeout/CloseoutTab'
 import { apiClient } from '@/lib/apiClient'
 import { useAuthStore } from '@/store/authStore'
 import type {
@@ -39,6 +40,8 @@ import {
   Check,
   ArrowRight,
   Scale,
+  Lock,
+  Archive,
 } from 'lucide-react'
 
 export const EventDetailPage: React.FC = () => {
@@ -50,7 +53,7 @@ export const EventDetailPage: React.FC = () => {
   const [documents, setDocuments] = useState<EventDocument[]>([])
   const [resources, setResources] = useState<ResourceRequest[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'overview' | 'venue' | 'budget' | 'documents' | 'resources' | 'execution' | 'expenses' | 'settlement'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'venue' | 'budget' | 'documents' | 'resources' | 'execution' | 'expenses' | 'settlement' | 'closeout'>('overview')
 
   // Execution & Post-Event Report state (Phase 2.1)
   const [confirmedEvent, setConfirmedEvent] = useState<ConfirmedEvent | null>(null)
@@ -207,7 +210,8 @@ export const EventDetailPage: React.FC = () => {
     loadAll()
   }, [loadAll])
 
-  const isEditable = event?.status === 'DRAFT' || event?.status === 'REVISION_REQUIRED'
+  const isClosedOrArchived = confirmedEvent?.status === 'CLOSED' || confirmedEvent?.status === 'ARCHIVED'
+  const isEditable = (event?.status === 'DRAFT' || event?.status === 'REVISION_REQUIRED') && !isClosedOrArchived
   const isSecretary = user?.role === 'CLUB_SECRETARY' || user?.role === 'SYSTEM_ADMIN'
 
   // Submit to workflow
@@ -632,6 +636,53 @@ export const EventDetailPage: React.FC = () => {
         </div>
       )}
 
+            {/* Global Read-Only Notice Banners for CLOSED and ARCHIVED */}
+      {confirmedEvent?.status === 'CLOSED' && (
+        <div data-testid="event-detail-closed-banner" className="p-4 bg-slate-900 text-white rounded-xl flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-slate-800 text-emerald-400 rounded-lg">
+              <Lock className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold tracking-wider uppercase text-emerald-400">
+                  Event Closed & Locked
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  Statutory Closeout Complete
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Event data is locked after institutional closeout. All operational modifications are disabled.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmedEvent?.status === 'ARCHIVED' && (
+        <div data-testid="event-detail-archived-banner" className="p-4 bg-purple-950 text-white rounded-xl flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-purple-900 text-purple-300 rounded-lg">
+              <Archive className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold tracking-wider uppercase text-purple-300">
+                  Event Archived
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                  Permanent Historical Record
+                </span>
+              </div>
+              <p className="text-xs text-purple-200 mt-0.5">
+                This event is retained as an immutable historical record. Operational modifications and reopenings are disabled.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main Header Card */}
       <div className="card p-6 bg-white">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
@@ -809,6 +860,17 @@ export const EventDetailPage: React.FC = () => {
               }`}
             >
               <Scale className="w-4 h-4" /> Financial Settlement
+            </button>
+            <button
+              data-testid="tab-closeout-button"
+              onClick={() => setActiveTab('closeout')}
+              className={`px-4 py-2.5 border-b-2 flex items-center gap-2 font-bold ${
+                activeTab === 'closeout'
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-surface-500 hover:text-surface-800'
+              }`}
+            >
+              <CheckCircle2 className="w-4 h-4" /> Closeout
             </button>
           </>
         )}
@@ -2041,6 +2103,17 @@ export const EventDetailPage: React.FC = () => {
           isFinanceOfficer={user?.role === 'FINANCE_OFFICER'}
           isPrincipal={user?.role === 'PRINCIPAL'}
           isAdmin={user?.role === 'SYSTEM_ADMIN'}
+        />
+      )}
+
+      {/* Tab: Event Closeout (Phase 2.4) */}
+      {activeTab === 'closeout' && (
+        <CloseoutTab
+          eventId={event.id}
+          eventStatus={event.status}
+          confirmedEventStatus={confirmedEvent?.status}
+          userRole={user?.role}
+          onEventUpdated={loadAll}
         />
       )}
 
