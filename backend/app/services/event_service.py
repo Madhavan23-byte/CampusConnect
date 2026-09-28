@@ -29,7 +29,7 @@ Encapsulates all domain logic for event proposals (EventRequest):
 """
 
 import uuid
-from datetime import UTC
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import inspect, select
@@ -47,21 +47,38 @@ from app.core.exceptions import (
 from app.models.domain import (
     AuditLog,
     BudgetProposal,
+    CashAdvance,
+    Club,
     Event,
     EventRequest,
     EventRequestVersion,
     HallBookingConfirmed,
     User,
     VenueRequest,
+    WorkflowInstance,
+    WorkflowInstanceStep,
 )
-from app.models.enums import AuditAction, EventRequestStatus, EventStatus
+from app.models.enums import (
+    AuditAction,
+    CashAdvanceStatus,
+    EventRequestStatus,
+    EventStatus,
+    NotificationType,
+    UserRole,
+    VenueRequestStatus,
+    WorkflowInstanceStatus,
+    WorkflowStepStatus,
+)
 from app.schemas.event import (
+    EventCancellationRequest,
+    EventCancellationResponse,
     EventRequestCreate,
     EventRequestResponse,
     EventRequestSubmit,
     EventRequestUpdate,
 )
 from app.services.club_service import ClubService
+from app.services.notification_service import NotificationService
 
 
 def to_event_response(event: EventRequest) -> EventRequestResponse:
@@ -654,3 +671,486 @@ class EventService:
             )
         )
         return confirmed_event
+
+    # =========================================================================
+    # EVENT & PROPOSAL CANCELLATION
+    # =========================================================================
+
+    @classmethod
+    async def cancel_proposal(
+        cls,
+        db: AsyncSession,
+        proposal_id: uuid.UUID,
+        reason: str,
+        actor: User,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> EventCancellationResponse:
+        """
+        Cancel an event proposal draft or proposal under review.
+        Enforces:
+        - Authority: CLUB_SECRETARY of owning club or SYSTEM_ADMIN.
+        - Status must be DRAFT, SUBMITTED, IN_REVIEW, or REVISION_REQUIRED.
+        - Rejects APPROVED (direct to event cancellation), REJECTED, or CANCELLED.
+        - Cancels associated WorkflowInstance and marks pending steps SKIPPED.
+        - Releases tentative HallBookingConfirmed if step 2 was approved.
+        - Emits PROPOSAL_CANCELLED and optionally HALL_RELEASED audit entries.
+        - Notifies affected stakeholders.
+        """
+        stmt = (
+            select(EventRequest)
+            .where(EventRequest.id == proposal_id, EventRequest.deleted_at.is_(None))
+            .with_for_update()
+        )
+        proposal = await db.scalar(stmt)
+        if not proposal:
+            raise NotFoundError(f"Event proposal with ID '{proposal_id}' was not found.")
+
+        # Role & Ownership checks
+        if actor.role != UserRole.SYSTEM_ADMIN:
+            await ClubService.verify_club_ownership(
+                db, proposal.club_id, actor, "cancel this event proposal"
+            )
+
+        # State machine validations
+        if proposal.status == EventRequestStatus.CANCELLED:
+            raise WorkflowStateError("Event proposal is already cancelled.")
+        if proposal.status == EventRequestStatus.REJECTED:
+            raise WorkflowStateError("Cannot cancel an already rejected event proposal.")
+        if proposal.status == EventRequestStatus.APPROVED:
+            raise WorkflowStateError(
+                "Proposal has already been approved and scheduled as an event. "
+                "Use event cancellation instead."
+            )
+        if proposal.status not in (
+            EventRequestStatus.DRAFT,
+            EventRequestStatus.SUBMITTED,
+            EventRequestStatus.IN_REVIEW,
+            EventRequestStatus.REVISION_REQUIRED,
+        ):
+            st = (
+                proposal.status.value
+                if hasattr(proposal.status, "value")
+                else str(proposal.status)
+            )
+            raise WorkflowStateError(f"Cannot cancel proposal in '{st}' status.")
+
+        now_utc = datetime.now(UTC)
+        actor_role_str = (
+            actor.role.value if hasattr(actor.role, "value") else str(actor.role)
+        )
+        workflow_cancelled = False
+        hall_released = False
+
+        # 1. Cancel Workflow if active
+        wf = None
+        if proposal.workflow_instance_id:
+            wf = await db.scalar(
+                select(WorkflowInstance)
+                .where(WorkflowInstance.id == proposal.workflow_instance_id)
+                .with_for_update()
+            )
+            if wf and wf.status == WorkflowInstanceStatus.IN_PROGRESS:
+                wf.status = WorkflowInstanceStatus.CANCELLED
+                workflow_cancelled = True
+                # Skip pending steps
+                pending_steps = (
+                    await db.scalars(
+                        select(WorkflowInstanceStep).where(
+                            WorkflowInstanceStep.instance_id == wf.id,
+                            WorkflowInstanceStep.status == WorkflowStepStatus.PENDING,
+                        )
+                    )
+                ).all()
+                for step in pending_steps:
+                    step.status = WorkflowStepStatus.SKIPPED
+
+        # 2. Release HallBookingConfirmed if step 2 was approved
+        booking = await db.scalar(
+            select(HallBookingConfirmed)
+            .where(
+                HallBookingConfirmed.event_request_id == proposal.id,
+                HallBookingConfirmed.is_active.is_(True),
+            )
+            .with_for_update()
+        )
+        if booking:
+            booking.is_active = False
+            hall_released = True
+            db.add(
+                AuditLog(
+                    actor_id=actor.id,
+                    actor_email=actor.email,
+                    actor_role=actor_role_str,
+                    action=AuditAction.HALL_RELEASED,
+                    entity_type="hall_booking_confirmed",
+                    entity_id=str(booking.id),
+                    previous_state={
+                        "is_active": True,
+                        "event_request_id": str(proposal.id),
+                    },
+                    new_state={
+                        "is_active": False,
+                        "reason": f"Proposal cancelled: {reason}",
+                    },
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                )
+            )
+
+        # 3. Update venue_request status if present
+        vr = await db.scalar(
+            select(VenueRequest).where(VenueRequest.event_request_id == proposal.id)
+        )
+        if vr and vr.status == VenueRequestStatus.APPROVED:
+            vr.status = VenueRequestStatus.REJECTED
+
+        # 4. Advance proposal status
+        prev_status = (
+            proposal.status.value
+            if hasattr(proposal.status, "value")
+            else str(proposal.status)
+        )
+        proposal.status = EventRequestStatus.CANCELLED
+        proposal.version_lock += 1
+
+        db.add(
+            AuditLog(
+                actor_id=actor.id,
+                actor_email=actor.email,
+                actor_role=actor_role_str,
+                action=AuditAction.PROPOSAL_CANCELLED,
+                entity_type="event_request",
+                entity_id=str(proposal.id),
+                previous_state={"status": prev_status},
+                new_state={
+                    "status": EventRequestStatus.CANCELLED.value,
+                    "cancellation_reason": reason,
+                },
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+        )
+
+        # 5. Notifications
+        if actor.id != proposal.submitted_by:
+            await NotificationService.create_notification(
+                db=db,
+                recipient_id=proposal.submitted_by,
+                notification_type=NotificationType.SYSTEM,
+                title=f"Proposal Cancelled: '{proposal.title}'",
+                message=f"Your proposal was cancelled by {actor_role_str}: {reason}",
+                event_request_id=proposal.id,
+            )
+        elif wf and wf.current_step_order:
+            current_step = await db.scalar(
+                select(WorkflowInstanceStep).where(
+                    WorkflowInstanceStep.instance_id == wf.id,
+                    WorkflowInstanceStep.step_order == wf.current_step_order,
+                )
+            )
+            if current_step and current_step.assigned_to:
+                await NotificationService.create_notification(
+                    db=db,
+                    recipient_id=current_step.assigned_to,
+                    notification_type=NotificationType.SYSTEM,
+                    title=f"Proposal Withdrawn: '{proposal.title}'",
+                    message=(
+                        f"Proposal '{proposal.title}' awaiting your review has been "
+                        f"cancelled by the club secretary: {reason}"
+                    ),
+                    event_request_id=proposal.id,
+                )
+
+        await db.commit()
+
+        return EventCancellationResponse(
+            id=proposal.id,
+            entity_type="PROPOSAL",
+            title=proposal.title,
+            status=EventRequestStatus.CANCELLED.value,
+            cancelled_at=now_utc,
+            cancelled_by=actor.id,
+            cancellation_reason=reason,
+            hall_released=hall_released,
+            workflow_cancelled=workflow_cancelled,
+            advance_status=None,
+            message="Event proposal has been successfully cancelled.",
+        )
+
+    @classmethod
+    async def cancel_confirmed_event(
+        cls,
+        db: AsyncSession,
+        event_id: uuid.UUID,
+        reason: str,
+        actor: User,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> EventCancellationResponse:
+        """
+        Cancel a confirmed (SCHEDULED or IN_PROGRESS) event.
+        Enforces:
+        - Authority: CLUB_SECRETARY of hosting club, PRINCIPAL, DEAN, or SYSTEM_ADMIN.
+        - Status must be SCHEDULED or IN_PROGRESS.
+        - Rejects terminal states: CLOSED and ARCHIVED (ConflictError).
+        - Rejects COMPLETED and CLOSURE_REQUESTED (WorkflowStateError).
+        - Rejects already CANCELLED events.
+        - Automatically releases HallBookingConfirmed to clear exclusion constraint.
+        - Financial Advance Safety:
+          * If advance in REQUESTED or APPROVED: automatically marked REJECTED.
+          * If advance in DISBURSED: left in DISBURSED as an institutional liability;
+            requires settlement refund before club clearance.
+        - Emits EVENT_STATUS_CHANGED, HALL_RELEASED, and ADVANCE_REJECTED audit logs.
+        - Dispatches notifications.
+        """
+        stmt = (
+            select(Event)
+            .where((Event.id == event_id) | (Event.event_request_id == event_id))
+            .with_for_update()
+        )
+        event = await db.scalar(stmt)
+        if not event:
+            raise NotFoundError(f"Confirmed event with ID '{event_id}' was not found.")
+
+        # Authority Check
+        allowed_institutional_roles = {
+            UserRole.PRINCIPAL,
+            UserRole.DEAN_STUDENT_AFFAIRS,
+            UserRole.SYSTEM_ADMIN,
+        }
+        if actor.role not in allowed_institutional_roles:
+            await ClubService.verify_club_ownership(
+                db, event.club_id, actor, "cancel this confirmed event"
+            )
+
+        # State validations
+        if event.status in (EventStatus.CLOSED, EventStatus.ARCHIVED):
+            st = event.status.value if hasattr(event.status, "value") else str(event.status)
+            raise ConflictError(
+                f"Cannot cancel event in terminal status '{st}'. Certification is locked."
+            )
+        if event.status == EventStatus.COMPLETED:
+            raise WorkflowStateError(
+                "Cannot cancel an event that has already completed. "
+                "Completed events must proceed through post-event closeout."
+            )
+        if event.status == EventStatus.CLOSURE_REQUESTED:
+            raise WorkflowStateError(
+                "Cannot cancel an event currently under closeout review."
+            )
+        if event.status == EventStatus.CANCELLED:
+            raise WorkflowStateError("Event is already cancelled.")
+        if event.status not in (EventStatus.SCHEDULED, EventStatus.IN_PROGRESS):
+            st = event.status.value if hasattr(event.status, "value") else str(event.status)
+            raise WorkflowStateError(f"Cannot cancel event in '{st}' status.")
+
+        now_utc = datetime.now(UTC)
+        actor_role_str = (
+            actor.role.value if hasattr(actor.role, "value") else str(actor.role)
+        )
+        hall_released = False
+        advance_status_note = None
+
+        # 1. Hall Booking Release
+        booking = await db.scalar(
+            select(HallBookingConfirmed)
+            .where(
+                HallBookingConfirmed.event_request_id == event.event_request_id,
+                HallBookingConfirmed.is_active.is_(True),
+            )
+            .with_for_update()
+        )
+        if booking:
+            booking.is_active = False
+            hall_released = True
+            db.add(
+                AuditLog(
+                    actor_id=actor.id,
+                    actor_email=actor.email,
+                    actor_role=actor_role_str,
+                    action=AuditAction.HALL_RELEASED,
+                    entity_type="hall_booking_confirmed",
+                    entity_id=str(booking.id),
+                    previous_state={"is_active": True, "event_id": str(event.id)},
+                    new_state={
+                        "is_active": False,
+                        "reason": f"Event cancelled: {reason}",
+                    },
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                )
+            )
+
+        # 2. Financial Advance Safety Check
+        advance = await db.scalar(
+            select(CashAdvance)
+            .where(CashAdvance.event_id == event.id)
+            .with_for_update()
+        )
+        if advance:
+            if advance.status in (CashAdvanceStatus.REQUESTED, CashAdvanceStatus.APPROVED):
+                adv_prev = (
+                    advance.status.value
+                    if hasattr(advance.status, "value")
+                    else str(advance.status)
+                )
+                advance.status = CashAdvanceStatus.REJECTED
+                advance.rejection_reason = f"Event cancelled: {reason}"
+                advance_status_note = "REJECTED_ON_CANCELLATION"
+                db.add(
+                    AuditLog(
+                        actor_id=actor.id,
+                        actor_email=actor.email,
+                        actor_role=actor_role_str,
+                        action=AuditAction.ADVANCE_REJECTED,
+                        entity_type="cash_advance",
+                        entity_id=str(advance.id),
+                        previous_state={"status": adv_prev},
+                        new_state={
+                            "status": CashAdvanceStatus.REJECTED.value,
+                            "rejection_reason": advance.rejection_reason,
+                        },
+                        ip_address=ip_address,
+                        user_agent=user_agent,
+                    )
+                )
+            elif advance.status == CashAdvanceStatus.DISBURSED:
+                advance_status_note = "DISBURSED_REFUND_REQUIRED"
+
+        # 3. Mutate Event status and cancellation fields
+        prev_status = (
+            event.status.value if hasattr(event.status, "value") else str(event.status)
+        )
+        event.status = EventStatus.CANCELLED
+        event.cancelled_at = now_utc
+        event.cancelled_by = actor.id
+        event.cancellation_reason = reason
+
+        db.add(
+            AuditLog(
+                actor_id=actor.id,
+                actor_email=actor.email,
+                actor_role=actor_role_str,
+                action=AuditAction.EVENT_STATUS_CHANGED,
+                entity_type="event",
+                entity_id=str(event.id),
+                previous_state={"status": prev_status},
+                new_state={
+                    "status": EventStatus.CANCELLED.value,
+                    "cancellation_reason": reason,
+                    "cancelled_by": str(actor.id),
+                    "cancelled_at": now_utc.isoformat(),
+                    "advance_status": advance_status_note,
+                },
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+        )
+
+        # 4. Notifications
+        club = await db.scalar(select(Club).where(Club.id == event.club_id))
+        if club and club.faculty_advisor_id and club.faculty_advisor_id != actor.id:
+            await NotificationService.create_notification(
+                db=db,
+                recipient_id=club.faculty_advisor_id,
+                notification_type=NotificationType.SYSTEM,
+                title=f"Event Cancelled: '{event.title}'",
+                message=f"Event '{event.title}' cancelled by {actor_role_str}: {reason}",
+                event_request_id=event.event_request_id,
+            )
+
+        if advance and advance.status == CashAdvanceStatus.DISBURSED:
+            finance_users = (
+                await db.scalars(
+                    select(User).where(
+                        User.role == UserRole.FINANCE_OFFICER,
+                        User.is_active.is_(True),
+                    )
+                )
+            ).all()
+            for fo in finance_users:
+                await NotificationService.create_notification(
+                    db=db,
+                    recipient_id=fo.id,
+                    notification_type=NotificationType.SYSTEM,
+                    title=f"Outstanding Advance Refund Required: '{event.title}'",
+                    message=(
+                        f"Event '{event.title}' was cancelled, but has an active disbursed advance "
+                        f"of ₹{advance.amount_disbursed:.2f}. Full refund must be collected."
+                    ),
+                    event_request_id=event.event_request_id,
+                )
+
+        await db.commit()
+
+        msg = "Event has been successfully cancelled."
+        if advance_status_note == "DISBURSED_REFUND_REQUIRED":
+            msg += (
+                " Note: An outstanding cash advance was disbursed for this event and must "
+                "be refunded via financial settlement."
+            )
+
+        return EventCancellationResponse(
+            id=event.id,
+            entity_type="CONFIRMED_EVENT",
+            title=event.title,
+            status=EventStatus.CANCELLED.value,
+            cancelled_at=now_utc,
+            cancelled_by=actor.id,
+            cancellation_reason=reason,
+            hall_released=hall_released,
+            workflow_cancelled=False,
+            advance_status=advance_status_note,
+            message=msg,
+        )
+
+    @classmethod
+    async def cancel_any_event(
+        cls,
+        db: AsyncSession,
+        identifier: uuid.UUID,
+        payload: EventCancellationRequest,
+        actor: User,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> EventCancellationResponse:
+        """
+        Unified cancellation handler.
+        Resolves identifier as a confirmed Event first;
+        if not found, resolves as EventRequest proposal.
+        """
+        confirmed = await db.scalar(
+            select(Event).where(
+                (Event.id == identifier) | (Event.event_request_id == identifier)
+            )
+        )
+        if confirmed:
+            return await cls.cancel_confirmed_event(
+                db=db,
+                event_id=confirmed.id,
+                reason=payload.reason,
+                actor=actor,
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+
+        proposal = await db.scalar(
+            select(EventRequest).where(
+                EventRequest.id == identifier,
+                EventRequest.deleted_at.is_(None),
+            )
+        )
+        if proposal:
+            return await cls.cancel_proposal(
+                db=db,
+                proposal_id=proposal.id,
+                reason=payload.reason,
+                actor=actor,
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+
+        raise NotFoundError(
+            f"Event proposal or confirmed event with ID '{identifier}' was not found."
+        )

@@ -1247,7 +1247,7 @@ describe('FinancialSettlementTab Component', () => {
   it('37. Finance Officer uploads payment proof and records reimbursement payment', async () => {
     setupDefaultMocks({ status: 'PENDING_REIMBURSEMENT', settlement_type: 'REIMBURSEMENT_DUE' })
     ;vi.mocked(apiClient.post).mockImplementation((url: string) => {
-      if (url.endsWith('/settlement/payments/upload-proof')) {
+      if (url.endsWith('/settlement/upload-proof')) {
         return Promise.resolve({
           data: {
             document_id: 'doc-proof-100',
@@ -1301,7 +1301,7 @@ describe('FinancialSettlementTab Component', () => {
 
     await waitFor(() => {
       expect(apiClient.post).toHaveBeenCalledWith(
-        '/events/ev-100/settlement/payments/upload-proof',
+        '/events/ev-100/settlement/upload-proof',
         expect.any(FormData),
         expect.any(Object)
       )

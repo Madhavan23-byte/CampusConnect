@@ -98,5 +98,7 @@ async def reset_app_engine_pool_per_test():
     Disposing the engine inside the same event loop that created the connection
     guarantees all connections are closed cleanly before the event loop shuts down.
     """
+    login_limiter.reset()
     yield
+    login_limiter.reset()
     await app_engine.dispose()

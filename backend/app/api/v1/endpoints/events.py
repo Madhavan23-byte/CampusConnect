@@ -29,6 +29,8 @@ from app.schemas.budget import (
     FinanceVerificationRequest,
 )
 from app.schemas.event import (
+    EventCancellationRequest,
+    EventCancellationResponse,
     EventRequestCreate,
     EventRequestResponse,
     EventRequestSubmit,
@@ -485,3 +487,32 @@ async def get_event_workflow(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> WorkflowInstanceResponse:
     return await WorkflowService.get_event_workflow(db=db, event_id=id)
+
+
+@router.post(
+    "/{id}/cancel",
+    response_model=EventCancellationResponse,
+    summary="Cancel event proposal or confirmed event",
+    description=(
+        "Cancel an event proposal draft/under-review or a scheduled/in-progress event. "
+        "Enforces role checks, releases hall bookings, and handles cash advance safety."
+    ),
+)
+async def cancel_event(
+    id: uuid.UUID,
+    payload: EventCancellationRequest,
+    request: Request,
+    current_user: Annotated[User, Depends(require_permission(Permission.EVENT_CANCEL))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> EventCancellationResponse:
+    ip_address = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+
+    return await EventService.cancel_any_event(
+        db=db,
+        identifier=id,
+        payload=payload,
+        actor=current_user,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )

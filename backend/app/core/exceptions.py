@@ -139,6 +139,23 @@ class BudgetCapExceededError(BusinessRuleError):
 
 
 # ---------------------------------------------------------------------------
+# HTTP 429
+# ---------------------------------------------------------------------------
+class RateLimitExceededError(CampusConnectError):
+    """Client has exceeded the permitted request rate limit."""
+
+    status_code: int = 429
+
+    def __init__(
+        self,
+        message: str = "Too many login attempts. Please try again later.",
+        retry_after: int = 60,
+    ) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+# ---------------------------------------------------------------------------
 # HTTP 500
 # ---------------------------------------------------------------------------
 class InternalError(CampusConnectError):

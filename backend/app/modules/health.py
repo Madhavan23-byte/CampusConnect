@@ -6,7 +6,7 @@ No authentication required — used by Docker health checks and monitoring.
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response, status
 from sqlalchemy import text
 
 from app.core.config import get_settings
@@ -19,7 +19,7 @@ logger = get_logger(__name__)
 
 
 @router.get("/health", summary="Application health check")
-async def health_check():
+async def health_check(response: Response):
     """
     Returns the operational status of the CampusConnect backend.
 
@@ -44,7 +44,11 @@ async def health_check():
         db_error = "Database unreachable"
         logger.warning("Health check: database unreachable — %s", str(exc))
 
-    overall_status = "ok" if db_status == "ok" else "degraded"
+    if db_status != "ok":
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        overall_status = "unhealthy"
+    else:
+        overall_status = "ok"
 
     return {
         "status": overall_status,

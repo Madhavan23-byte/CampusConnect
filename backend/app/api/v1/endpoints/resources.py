@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_current_user, get_db, require_any_role
 from app.core.exceptions import (
     ForbiddenError,
     NotFoundError,
@@ -63,7 +63,9 @@ async def create_resource_request(
     event_id: uuid.UUID,
     data: ResourceRequestCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[
+        User, Depends(require_any_role(UserRole.CLUB_SECRETARY, UserRole.SYSTEM_ADMIN))
+    ],
 ) -> ResourceRequestResponse:
     """Declare a resource/equipment requirement for an event proposal."""
     event = await db.scalar(select(EventRequest).where(EventRequest.id == event_id))
@@ -111,7 +113,9 @@ async def delete_resource_request(
     event_id: uuid.UUID,
     resource_id: uuid.UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[
+        User, Depends(require_any_role(UserRole.CLUB_SECRETARY, UserRole.SYSTEM_ADMIN))
+    ],
 ):
     """Delete a declared resource request from an event proposal."""
     event = await db.scalar(select(EventRequest).where(EventRequest.id == event_id))

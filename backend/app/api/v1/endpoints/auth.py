@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, get_db
 from app.core.config import get_settings
 from app.core.exceptions import UnauthorizedError
+from app.core.rate_limiter import check_login_rate_limit
 from app.models.domain import User
 from app.schemas.auth import (
     TokenResponse,
@@ -34,7 +35,10 @@ router = APIRouter()
     response_model=UserAuthResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Register a new user",
-    description="Register a new college club member or coordinator account. Passwords must satisfy complexity requirements.",
+    description=(
+        "Register a new college club member or coordinator account. "
+        "Passwords must satisfy complexity requirements."
+    ),
 )
 async def register(
     register_data: UserRegisterRequest,
@@ -49,7 +53,11 @@ async def register(
     "/login",
     response_model=TokenResponse,
     summary="Authenticate user",
-    description="Authenticate with email and password. Returns JWT access token; sets opaque refresh token in HttpOnly cookie.",
+    description=(
+        "Authenticate with email and password. Returns JWT access token; "
+        "sets opaque refresh token in HttpOnly cookie."
+    ),
+    dependencies=[Depends(check_login_rate_limit)],
 )
 async def login(
     login_data: UserLoginRequest,
@@ -93,7 +101,10 @@ async def login(
     "/refresh",
     response_model=TokenResponse,
     summary="Rotate refresh token",
-    description="Rotates refresh token supplied via HttpOnly cookie. Returns fresh access token and replaces refresh cookie.",
+    description=(
+        "Rotates refresh token supplied via HttpOnly cookie. "
+        "Returns fresh access token and replaces refresh cookie."
+    ),
 )
 async def refresh_token(
     request: Request,

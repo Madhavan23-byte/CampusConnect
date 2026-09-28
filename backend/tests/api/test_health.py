@@ -54,6 +54,27 @@ class TestHealthEndpoint:
         assert response.headers.get("x-frame-options") == "DENY"
 
 
+
+    @pytest.mark.asyncio
+    async def test_health_db_failure_returns_503(self, client, monkeypatch):
+        from app.modules import health
+
+        class FailingEngine:
+            def connect(self):
+                raise RuntimeError("Connection to Postgres failed")
+
+        monkeypatch.setattr(health, "engine", FailingEngine())
+        response = await client.get("/api/v1/health")
+        assert response.status_code == 503
+        data = response.json()
+        assert data["status"] == "unhealthy"
+        assert data["checks"]["database"]["status"] == "error"
+        assert data["checks"]["database"]["error"] == "Database unreachable"
+        # Verify no sensitive details or connection strings exposed
+        assert "password" not in response.text.lower()
+        assert "postgresql" not in response.text.lower()
+
+
 class TestModelImport:
     """Verifies all domain models load without error."""
 

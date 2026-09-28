@@ -112,3 +112,35 @@ class EventRequestResponse(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class EventCancellationRequest(BaseModel):
+    """Payload for cancelling an event proposal or confirmed event."""
+
+    reason: str = Field(min_length=3, max_length=1000, description="Reason for cancellation")
+
+    @field_validator("reason")
+    @classmethod
+    def clean_reason(cls, v: str) -> str:
+        cleaned = " ".join(v.strip().split())
+        if len(cleaned) < 3:
+            raise ValueError("Cancellation reason must be at least 3 characters")
+        return cleaned
+
+
+class EventCancellationResponse(BaseModel):
+    """Result of cancelling an event proposal or confirmed event."""
+
+    id: uuid.UUID
+    entity_type: str  # "PROPOSAL" or "CONFIRMED_EVENT"
+    title: str
+    status: str
+    cancelled_at: datetime
+    cancelled_by: uuid.UUID
+    cancellation_reason: str
+    hall_released: bool
+    workflow_cancelled: bool
+    advance_status: str | None = None
+    message: str
+
+    model_config = ConfigDict(from_attributes=True)

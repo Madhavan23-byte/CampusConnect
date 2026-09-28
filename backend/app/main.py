@@ -33,6 +33,7 @@ from app.core.exceptions import (
     InvalidWorkflowTransitionError,
     NotFoundError,
     OptimisticLockError,
+    RateLimitExceededError,
     ResourceOwnershipError,
     TokenExpiredError,
     UnauthorizedError,
@@ -118,11 +119,41 @@ def create_app() -> FastAPI:
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Permissions-Policy"] = (
+            "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+        )
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self'; "
+            "style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; "
+            "font-src 'self' https://fonts.gstatic.com data:; "
+            "img-src 'self' data: blob:; "
+            "connect-src 'self'; "
+            "object-src 'none'; "
+            "frame-ancestors 'none'; "
+            "base-uri 'self'; "
+            "form-action 'self'"
+        )
+        is_https = (
+            request.url.scheme == "https"
+            or request.headers.get("x-forwarded-proto") == "https"
+            or settings.ENV == "production"
+        )
+        if is_https:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response
 
     # ------------------------------------------------------------------
     # Exception handlers — convert domain exceptions to HTTP responses
     # ------------------------------------------------------------------
+
+    @app.exception_handler(RateLimitExceededError)
+    async def rate_limit_handler(request: Request, exc: RateLimitExceededError):
+        return JSONResponse(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            headers={"Retry-After": str(exc.retry_after)},
+            content={"error": "rate_limited", "message": exc.message},
+        )
 
     @app.exception_handler(InvalidCredentialsError)
     @app.exception_handler(TokenExpiredError)

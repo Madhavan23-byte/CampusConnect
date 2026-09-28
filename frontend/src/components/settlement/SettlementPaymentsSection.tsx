@@ -84,7 +84,7 @@ export const SettlementPaymentsSection: React.FC<SettlementPaymentsSectionProps>
       const formData = new FormData()
       formData.append('file', file)
       const res = await apiClient.post<EvidenceUploadResponse>(
-        `/events/${eventId}/settlement/payments/upload-proof`,
+        `/events/${eventId}/settlement/upload-proof`,
         formData,
         { headers: { 'Content-Type': 'multipart/form-data' } }
       )

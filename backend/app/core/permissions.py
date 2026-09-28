@@ -64,7 +64,14 @@ ROLE_PERMISSIONS: Mapping[Permission, frozenset[UserRole]] = {
     # Events
     Permission.EVENT_PROPOSE: frozenset({UserRole.CLUB_SECRETARY}),
     Permission.EVENT_EDIT_DRAFT: frozenset({UserRole.CLUB_SECRETARY}),
-    Permission.EVENT_CANCEL: frozenset({UserRole.CLUB_SECRETARY, UserRole.SYSTEM_ADMIN}),
+    Permission.EVENT_CANCEL: frozenset(
+        {
+            UserRole.CLUB_SECRETARY,
+            UserRole.PRINCIPAL,
+            UserRole.DEAN_STUDENT_AFFAIRS,
+            UserRole.SYSTEM_ADMIN,
+        }
+    ),
     Permission.EVENT_VIEW_ALL: frozenset(UserRole),
     # Approval chain steps
     Permission.APPROVAL_FACULTY_REVIEW: frozenset({UserRole.FACULTY_ADVISOR}),

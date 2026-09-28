@@ -53,8 +53,8 @@ async def upload_expense_bill(
     id: uuid.UUID,
     file: Annotated[UploadFile, File(description="Bill or invoice document (PDF, PNG, JPG)")],
     request: Request,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> BillUploadResponse:
     """Upload a verified bill/receipt document to support actual expense claims."""
     doc = await DocumentService.upload_expense_invoice(
@@ -85,8 +85,8 @@ async def create_expense(
     id: uuid.UUID,
     payload: ActualExpenseCreate,
     request: Request,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> ActualExpenseResponse:
     """Create a new draft actual expense line item referencing an authentic bill document."""
     return await ExpenseService.create_draft_expense(
@@ -106,8 +106,8 @@ async def create_expense(
 )
 async def get_expense_summary(
     id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> ExpenseLedgerSummaryResponse:
     """Retrieve financial reconciliation aggregates, budget variance, and status breakdowns."""
     return await ExpenseService.get_ledger_summary(
@@ -124,8 +124,8 @@ async def get_expense_summary(
 )
 async def list_expenses(
     id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> list[ActualExpenseResponse]:
     """List all recorded actual expenses for the specified event."""
     return await ExpenseService.get_event_expenses(
@@ -143,8 +143,8 @@ async def list_expenses(
 async def get_expense(
     id: uuid.UUID,
     expense_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> ActualExpenseResponse:
     """Get single actual expense by ID."""
     return await ExpenseService.get_single_expense(
@@ -165,8 +165,8 @@ async def update_expense(
     expense_id: uuid.UUID,
     payload: ActualExpenseUpdate,
     request: Request,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> ActualExpenseResponse:
     """Update editable fields of a draft or queried expense item."""
     return await ExpenseService.update_expense(
@@ -189,8 +189,8 @@ async def delete_expense(
     id: uuid.UUID,
     expense_id: uuid.UUID,
     request: Request,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> None:
     """Delete a draft or queried expense item."""
     await ExpenseService.delete_draft_expense(
@@ -210,10 +210,10 @@ async def delete_expense(
 )
 async def submit_expenses(
     id: uuid.UUID,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
     payload: ActualExpenseSubmit | None = None,
-    request: Request = None,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> list[ActualExpenseResponse]:
     """Submit draft or queried expense claims to the Finance audit queue."""
     submit_payload = payload or ActualExpenseSubmit()
@@ -236,8 +236,8 @@ async def submit_single_expense(
     id: uuid.UUID,
     expense_id: uuid.UUID,
     request: Request,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> ActualExpenseResponse:
     """Submit a single draft or queried expense claim to Finance audit queue."""
     results = await ExpenseService.submit_expenses(
@@ -261,8 +261,8 @@ async def verify_expense(
     expense_id: uuid.UUID,
     payload: ActualExpenseVerify,
     request: Request,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> ActualExpenseResponse:
     """Approve full claimed amount (verified_amount == claimed_amount)."""
     return await ExpenseService.verify_expense(
@@ -286,8 +286,8 @@ async def partial_verify_expense(
     expense_id: uuid.UUID,
     payload: ActualExpensePartialVerify,
     request: Request,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> ActualExpenseResponse:
     """Approve claim with reduction (0 < verified_amount < claimed_amount)."""
     return await ExpenseService.partial_verify_expense(
@@ -311,8 +311,8 @@ async def query_expense(
     expense_id: uuid.UUID,
     payload: ActualExpenseQuery,
     request: Request,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> ActualExpenseResponse:
     """Request clarification or document re-scan with mandatory remarks."""
     return await ExpenseService.query_expense(
@@ -336,8 +336,8 @@ async def disallow_expense(
     expense_id: uuid.UUID,
     payload: ActualExpenseDisallow,
     request: Request,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> ActualExpenseResponse:
     """Completely reject an expense claim (verified_amount = 0.00)."""
     return await ExpenseService.disallow_expense(
