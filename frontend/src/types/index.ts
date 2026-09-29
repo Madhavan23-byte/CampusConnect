@@ -225,6 +225,7 @@ export interface EventRequest {
   chief_guest_institution?: string
   status: EventRequestStatus
   current_version: number
+  version_lock?: number
   academic_year: string
   venue_request?: VenueRequest
   budget_proposal?: BudgetProposal
@@ -236,6 +237,19 @@ export interface EventRequest {
   updated_at: string
 }
 
+
+export interface EventRequestUpdate {
+  title?: string
+  description?: string
+  event_type?: EventType
+  expected_attendees?: number
+  event_date?: string
+  chief_guest_name?: string
+  chief_guest_designation?: string
+  chief_guest_institution?: string
+  academic_year?: string
+  expected_version?: number
+}
 export interface Event {
   id: string
   event_request_id: string

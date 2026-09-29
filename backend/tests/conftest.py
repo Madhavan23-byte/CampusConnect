@@ -2,11 +2,9 @@
 CampusConnect — Pytest Configuration and Fixtures
 Shared test infrastructure for unit and API tests.
 """
-import asyncio
 import os
 from collections.abc import AsyncGenerator
 
-import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -27,11 +25,13 @@ os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-testing-only")
 os.environ.setdefault("ALLOWED_EMAIL_DOMAIN", "college.edu")
 os.environ.setdefault("EMAIL_PROVIDER", "development")
 
-from app.core.config import get_settings  # noqa: E402
+from app.core.config import get_settings  # noqa: E402, I001
+
 get_settings.cache_clear()
 
-from app.core.database import Base, engine as app_engine, get_db  # noqa: E402
-from app.main import app  # noqa: E402
+from app.core.database import Base, engine as app_engine, get_db  # noqa: E402, I001
+from app.core.rate_limiter import login_limiter  # noqa: E402, I001
+from app.main import app  # noqa: E402, I001
 
 
 @pytest_asyncio.fixture(scope="session")

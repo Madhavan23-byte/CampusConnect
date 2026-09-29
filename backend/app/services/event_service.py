@@ -42,6 +42,7 @@ from app.core.exceptions import (
     BadRequestError,
     ConflictError,
     NotFoundError,
+    OptimisticLockError,
     WorkflowStateError,
 )
 from app.models.domain import (
@@ -272,7 +273,27 @@ class EventService:
         REVISION_REQUIRED can be modified.
         Submitted or in-review proposals are immutable to planners.
         """
-        event = await cls.get_event(db, event_id, actor)
+        stmt = (
+            select(EventRequest)
+            .options(selectinload(EventRequest.club), selectinload(EventRequest.submitted_by_user))
+            .where(EventRequest.id == event_id, EventRequest.deleted_at.is_(None))
+            .with_for_update()
+        )
+        event = await db.scalar(stmt)
+        if not event:
+            raise NotFoundError(f"Event proposal with ID '{event_id}' was not found.")
+
+        # Enforce optimistic concurrency control
+        if (
+            event_in.expected_version is not None
+            and event.version_lock != event_in.expected_version
+        ):
+            raise OptimisticLockError(
+                f"Event proposal draft has been modified concurrently. "
+                f"Expected version {event_in.expected_version}, but current version is "
+                f"{event.version_lock}. "
+                "Please refetch the latest draft and reapply your changes."
+            )
 
         # Enforce lifecycle immutability
         if event.status not in (EventRequestStatus.DRAFT, EventRequestStatus.REVISION_REQUIRED):

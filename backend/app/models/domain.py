@@ -334,6 +334,7 @@ class HallBookingConfirmed(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         UUID(as_uuid=True),
         ForeignKey("venue_requests.id"),
         nullable=False,
+        index=True,
     )
     booking_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     # These are stored redundantly alongside the tstzrange for querying clarity
@@ -377,7 +378,7 @@ class EventRequest(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         UUID(as_uuid=True), ForeignKey("clubs.id"), nullable=False, index=True
     )
     submitted_by: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -407,6 +408,7 @@ class EventRequest(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
             "workflow_instances.id", use_alter=True, name="fk_event_requests_workflow_instance_id"
         ),
         nullable=True,
+        index=True,
     )
 
     # Relationships
@@ -845,7 +847,7 @@ class WorkflowInstance(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "workflow_instances"
 
     template_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("workflow_templates.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("workflow_templates.id"), nullable=False, index=True
     )
     # FK back to EventRequest — note: EventRequest also has FK to WorkflowInstance
     # This bidirectional reference is intentional for query efficiency
@@ -897,7 +899,7 @@ class WorkflowInstanceStep(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         index=True,
     )
     template_step_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("workflow_template_steps.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("workflow_template_steps.id"), nullable=False, index=True
     )
     step_order: Mapped[int] = mapped_column(Integer, nullable=False)
     step_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -951,13 +953,13 @@ class Event(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     )
     # The specific approved version that created this event
     approved_version_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("event_request_versions.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("event_request_versions.id"), nullable=False, index=True
     )
     club_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("clubs.id"), nullable=False, index=True
     )
     hall_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("halls.id"), nullable=True
+        UUID(as_uuid=True), ForeignKey("halls.id"), nullable=True, index=True
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -1030,7 +1032,10 @@ class Notification(Base, UUIDPrimaryKeyMixin):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     event_request_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("event_requests.id", ondelete="SET NULL"), nullable=True
+        UUID(as_uuid=True),
+        ForeignKey("event_requests.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     notification_type: Mapped[NotificationType] = mapped_column(String(50), nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
@@ -1456,6 +1461,10 @@ class FinancialSettlement(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         nullable=False,
     )
 
+    __table_args__ = (
+        Index("ix_financial_settlements_approved_version", "approved_version_id"),
+    )
+
     # Immutable Financial Snapshots captured at settlement preparation
     sanctioned_grant: Mapped[Decimal] = mapped_column(
         Numeric(precision=12, scale=2), nullable=False
@@ -1732,6 +1741,7 @@ class EventClosure(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         UUID(as_uuid=True),
         ForeignKey("post_event_reports.id", ondelete="RESTRICT"),
         nullable=False,
+        index=True,
     )
     requested_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),

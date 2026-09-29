@@ -65,6 +65,14 @@ class EventRequestUpdate(BaseModel):
     chief_guest_designation: str | None = Field(default=None, max_length=255)
     chief_guest_institution: str | None = Field(default=None, max_length=255)
     academic_year: str | None = Field(default=None, min_length=4, max_length=10)
+    expected_version: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Expected version_lock for optimistic concurrency control. "
+            "If provided and does not match the current version_lock, returns HTTP 409 Conflict."
+        ),
+    )
 
     @field_validator("title")
     @classmethod
