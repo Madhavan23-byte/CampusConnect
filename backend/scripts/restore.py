@@ -77,8 +77,10 @@ def verify_checksum(backup_path: Path) -> bool:
     return True
 
 
-async def ensure_database_exists(db_host: str, db_port: int, db_user: str, db_pass: str, target_db: str) -> None:
-    """Ensure target database exists, creating it from the postgres/template maintenance DB if needed."""
+async def ensure_database_exists(
+    db_host: str, db_port: int, db_user: str, db_pass: str, target_db: str
+) -> None:
+    """Ensure target database exists from template maintenance DB."""
     try:
         conn = await asyncpg.connect(
             host=db_host,
@@ -98,9 +100,7 @@ async def ensure_database_exists(db_host: str, db_port: int, db_user: str, db_pa
         )
 
     try:
-        exists = await conn.fetchval(
-            "SELECT 1 FROM pg_database WHERE datname = $1", target_db
-        )
+        exists = await conn.fetchval("SELECT 1 FROM pg_database WHERE datname = $1", target_db)
         if not exists:
             await conn.execute(f'CREATE DATABASE "{target_db}"')
             print(f"[RESTORE] Created target database: {target_db}")
@@ -108,7 +108,9 @@ async def ensure_database_exists(db_host: str, db_port: int, db_user: str, db_pa
         await conn.close()
 
 
-async def verify_restored_schema(db_host: str, db_port: int, db_user: str, db_pass: str, target_db: str) -> dict[str, any]:
+async def verify_restored_schema(
+    db_host: str, db_port: int, db_user: str, db_pass: str, target_db: str
+) -> dict[str, any]:
     """Inspect the restored database and verify Alembic head and core entities."""
     conn = await asyncpg.connect(
         host=db_host,
@@ -179,7 +181,9 @@ def restore_database(
     target_db = target_database or (parsed.path.lstrip("/") + "_restored")
 
     # Ensure target database exists
-    asyncio.run(ensure_database_exists(db_host, db_port, db_user, db_pass=db_password, target_db=target_db))
+    asyncio.run(
+        ensure_database_exists(db_host, db_port, db_user, db_pass=db_password, target_db=target_db)
+    )
 
     pg_restore_bin = find_pg_binary("pg_restore")
     print(f"[RESTORE] Restoring into {target_db} using {pg_restore_bin}...")
@@ -190,13 +194,17 @@ def restore_database(
 
     restore_cmd = [
         pg_restore_bin,
-        "-h", db_host,
-        "-p", str(db_port),
-        "-U", db_user,
-        "-d", target_db,
-        "--clean",            # Clean (drop) database objects before recreating them
-        "--if-exists",        # Use IF EXISTS when dropping
-        "--no-owner",         # Skip restoration of object ownership
+        "-h",
+        db_host,
+        "-p",
+        str(db_port),
+        "-U",
+        db_user,
+        "-d",
+        target_db,
+        "--clean",  # Clean (drop) database objects before recreating them
+        "--if-exists",  # Use IF EXISTS when dropping
+        "--no-owner",  # Skip restoration of object ownership
         "-v",
         str(backup_path),
     ]
@@ -209,7 +217,9 @@ def restore_database(
     print(f"[SUCCESS] Database restored into {target_db}.")
 
     # Run verification queries against the restored DB
-    report = asyncio.run(verify_restored_schema(db_host, db_port, db_user, db_pass=db_password, target_db=target_db))
+    report = asyncio.run(
+        verify_restored_schema(db_host, db_port, db_user, db_pass=db_password, target_db=target_db)
+    )
     print("[RESTORE VERIFICATION REPORT]")
     print(f"  - Alembic Version:     {report['alembic_version']}")
     print(f"  - Users Count:         {report['users_count']}")
@@ -218,18 +228,26 @@ def restore_database(
     print(f"  - Workflow Templates:  {report['templates_count']}")
     print(f"  - Indexes Verified:    {report['fk_indexes_count']}")
 
-    assert report["alembic_version"] == "0006_foreign_key_indexes", (
-        f"Restored Alembic version {report['alembic_version']} does not match expected head 0006_foreign_key_indexes!"
-    )
+    assert (
+        report["alembic_version"] == "0006_foreign_key_indexes"
+    ), f"Restored Alembic version {report['alembic_version']} != expected head!"
 
     return report
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="CampusConnect Disaster Recovery & Restore Utility")
+    parser = argparse.ArgumentParser(
+        description="CampusConnect Disaster Recovery & Restore Utility"
+    )
     parser.add_argument("backup_file", help="Path to .dump file to restore")
-    parser.add_argument("--target-db", dest="target_db", help="Target database name (default: <dbname>_restored)")
-    parser.add_argument("--verify-only", dest="verify_only", action="store_true", help="Only verify file checksum")
+    parser.add_argument(
+        "--target-db", dest="target_db", help="Target database name (default: <dbname>_restored)"
+    )
+    parser.add_argument(
+        "--verify-only", dest="verify_only", action="store_true", help="Only verify file checksum"
+    )
     args = parser.parse_args()
 
-    restore_database(args.backup_file, target_database=args.target_db, verify_only=args.verify_only)
+    restore_database(
+        args.backup_file, target_database=args.target_db, verify_only=args.verify_only
+    )

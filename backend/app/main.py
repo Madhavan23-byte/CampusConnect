@@ -6,6 +6,7 @@ All CampusConnect custom exceptions map to structured JSON responses.
 """
 
 import time
+import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
@@ -39,7 +40,6 @@ from app.core.exceptions import (
     UnauthorizedError,
     WorkflowStateError,
 )
-import uuid
 from app.core.logging import (
     get_logger,
     get_request_id,
@@ -256,7 +256,9 @@ def create_app() -> FastAPI:
     @app.exception_handler(CampusConnectError)
     async def internal_error_handler(request: Request, exc: CampusConnectError):
         rid = getattr(request.state, "request_id", None) or get_request_id() or "unknown"
-        logger.error("Unhandled CampusConnectError: %s [request_id=%s]", exc.message, rid, exc_info=exc)
+        logger.error(
+            "Unhandled CampusConnectError: %s [request_id=%s]", exc.message, rid, exc_info=exc
+        )
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
@@ -289,6 +291,22 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router, prefix="/api/v1")
     app.include_router(api_router, prefix="/api/v1")
+
+    # ------------------------------------------------------------------
+    # Serve static frontend production bundle if present (SPA fallback)
+    # ------------------------------------------------------------------
+    if settings.ENV != "test":
+        import os
+
+        from starlette.staticfiles import StaticFiles
+
+        frontend_dist = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
+        )
+        if os.path.exists(frontend_dist) and os.path.exists(
+            os.path.join(frontend_dist, "index.html")
+        ):
+            app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
 
     # Additional routers will be registered here as modules are implemented:
     # from app.modules.auth.router import router as auth_router

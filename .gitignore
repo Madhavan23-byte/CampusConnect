@@ -52,3 +52,11 @@ logs/
 # Database dumps (contain sensitive data)
 *.sql.gz
 *.dump
+
+# Production certificates & backups
+infrastructure/certs/
+*.key
+*.crt
+*.pem
+backend/backups/
+backups/

@@ -100,7 +100,9 @@ def create_backup(
     db_name = parsed.path.lstrip("/")
 
     # Setup target directory
-    base_dir = Path(output_dir) if output_dir else Path(__file__).resolve().parent.parent / "backups"
+    base_dir = (
+        Path(output_dir) if output_dir else Path(__file__).resolve().parent.parent / "backups"
+    )
     base_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
@@ -117,13 +119,18 @@ def create_backup(
 
     dump_cmd = [
         pg_dump_bin,
-        "-h", db_host,
-        "-p", db_port,
-        "-U", db_user,
-        "-F", "c",          # Custom compressed archive format
-        "-b",               # Include large objects
-        "-v",               # Verbose
-        "-f", str(db_backup_path),
+        "-h",
+        db_host,
+        "-p",
+        db_port,
+        "-U",
+        db_user,
+        "-F",
+        "c",  # Custom compressed archive format
+        "-b",  # Include large objects
+        "-v",  # Verbose
+        "-f",
+        str(db_backup_path),
         db_name,
     ]
 
@@ -157,7 +164,9 @@ def create_backup(
                 tar.add(uploads_dir, arcname="uploads")
 
             up_checksum = compute_sha256(str(uploads_tar_path))
-            uploads_checksum_path.write_text(f"{up_checksum}  {uploads_tar_path.name}\n", encoding="utf-8")
+            uploads_checksum_path.write_text(
+                f"{up_checksum}  {uploads_tar_path.name}\n", encoding="utf-8"
+            )
             print(f"[SUCCESS] Uploads archive created: {uploads_tar_path.name}")
             results["uploads_tar"] = str(uploads_tar_path)
             results["uploads_sha256"] = up_checksum
@@ -171,8 +180,14 @@ def create_backup(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="CampusConnect Database and Uploads Backup")
     parser.add_argument("--dir", dest="output_dir", help="Target backup directory")
-    parser.add_argument("--no-uploads", dest="uploads", action="store_false", help="Skip uploads archiving")
-    parser.add_argument("--retention", dest="retention", type=int, default=14, help="Retention period in days")
+    parser.add_argument(
+        "--no-uploads", dest="uploads", action="store_false", help="Skip uploads archiving"
+    )
+    parser.add_argument(
+        "--retention", dest="retention", type=int, default=14, help="Retention period in days"
+    )
     args = parser.parse_args()
 
-    create_backup(output_dir=args.output_dir, include_uploads=args.uploads, retention_days=args.retention)
+    create_backup(
+        output_dir=args.output_dir, include_uploads=args.uploads, retention_days=args.retention
+    )
