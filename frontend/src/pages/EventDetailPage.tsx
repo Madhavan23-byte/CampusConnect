@@ -1357,7 +1357,7 @@ export const EventDetailPage: React.FC = () => {
                       </td>
                       <td className="py-2.5 px-3 text-right space-x-2">
                         <a
-                          href={`http://localhost:8000/api/v1/events/${id}/documents/${doc.id}/download`}
+                          href={`/api/v1/events/${id}/documents/${doc.id}/download`}
                           target="_blank"
                           rel="noreferrer"
                           className="inline-flex items-center text-primary-600 hover:text-primary-800 p-1"
