@@ -5,7 +5,7 @@
  */
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios'
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
 
 export const apiClient = axios.create({
   baseURL: `${BASE_URL}/api/v1`,
@@ -45,7 +45,12 @@ apiClient.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // Do not attempt token refresh for auth endpoints (login, refresh)
+    const isAuthEndpoint =
+      originalRequest?.url?.includes('/auth/login') ||
+      originalRequest?.url?.includes('/auth/refresh')
+
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
       if (isRefreshing) {
         // Queue the request while refresh is in progress
         return new Promise((resolve, reject) => {
@@ -84,7 +89,9 @@ apiClient.interceptors.response.use(
         refreshQueue.forEach(({ reject }) => reject(refreshError))
         refreshQueue = []
         clearAuthStore()
-        window.location.href = '/login'
+        if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+          window.location.href = '/login'
+        }
         return Promise.reject(refreshError)
       } finally {
         isRefreshing = false

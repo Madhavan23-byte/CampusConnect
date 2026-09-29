@@ -37,7 +37,7 @@ export const AppRouter: React.FC = () => {
   const checkSession = useCallback(async () => {
     try {
       const res = await apiClient.get('/auth/me')
-      const token = (apiClient.defaults.headers.common['Authorization'] as string)?.replace('Bearer ', '') || ''
+      const token = useAuthStore.getState().accessToken || ''
       setAuth(res.data, token)
     } catch {
       setLoading(false)

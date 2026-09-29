@@ -19,8 +19,11 @@ export const LoginPage: React.FC = () => {
 
     try {
       const res = await apiClient.post('/auth/login', { email, password })
-      const { user, access_token } = res.data
-      setAuth(user, access_token)
+      const accessToken = res.data.access_token
+      const meRes = await apiClient.get('/auth/me', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      setAuth(meRes.data, accessToken)
       navigate('/dashboard')
     } catch (err: unknown) {
       const e = err as { response?: { data?: { message?: string } } }

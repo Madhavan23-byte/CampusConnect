@@ -106,7 +106,12 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------ #
     # Canonical format for list environment variables: JSON array.
     # Example in .env: CORS_ALLOWED_ORIGINS=["http://localhost:5173","http://localhost:3000"]
-    CORS_ALLOWED_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    CORS_ALLOWED_ORIGINS: list[str] = [
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
+    ]
     RATE_LIMIT_LOGIN_PER_MINUTE: int = 10
     MAX_LOGIN_ATTEMPTS: int = 5
     ACCOUNT_LOCKOUT_MINUTES: int = 15
