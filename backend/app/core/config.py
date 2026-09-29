@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     ENV: Literal["development", "production", "test"] = "development"
     DEBUG: bool = False
     LOG_LEVEL: str = "INFO"
+    LOG_FORMAT: Literal["auto", "json", "text"] = "auto"
 
     # ------------------------------------------------------------------ #
     # Database

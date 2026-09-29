@@ -39,7 +39,14 @@ from app.core.exceptions import (
     UnauthorizedError,
     WorkflowStateError,
 )
-from app.core.logging import get_logger
+import uuid
+from app.core.logging import (
+    get_logger,
+    get_request_id,
+    is_safe_request_id,
+    reset_request_id,
+    set_request_id,
+)
 from app.services.settlement_service import SettlementStaleDataError
 
 settings = get_settings()
@@ -99,14 +106,47 @@ def create_app() -> FastAPI:
     )
 
     # ------------------------------------------------------------------
-    # Request timing middleware
+    # Request context, correlation ID, timing & structured access logging
     # ------------------------------------------------------------------
     @app.middleware("http")
-    async def add_process_time_header(request: Request, call_next):
+    async def request_context_middleware(request: Request, call_next):
+        raw_rid = request.headers.get("X-Request-ID")
+        if raw_rid and is_safe_request_id(raw_rid):
+            request_id = raw_rid.strip()
+        else:
+            request_id = str(uuid.uuid4())
+
+        request.state.request_id = request_id
+        token = set_request_id(request_id)
+
         start = time.perf_counter()
-        response = await call_next(request)
-        duration_ms = (time.perf_counter() - start) * 1000
+        try:
+            response = await call_next(request)
+        finally:
+            duration_ms = (time.perf_counter() - start) * 1000
+            reset_request_id(token)
+
+        response.headers["X-Request-ID"] = request_id
         response.headers["X-Process-Time-Ms"] = f"{duration_ms:.2f}"
+
+        # Structured access logging (omits high-frequency liveness probes)
+        if request.url.path not in ("/api/v1/health/live",):
+            logger.info(
+                "HTTP %s %s %s %.2fms",
+                request.method,
+                request.url.path,
+                response.status_code,
+                duration_ms,
+                extra={
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status_code": response.status_code,
+                    "duration_ms": round(duration_ms, 2),
+                    "client_ip": request.client.host if request.client else None,
+                },
+            )
+
         return response
 
     # ------------------------------------------------------------------
@@ -215,18 +255,30 @@ def create_app() -> FastAPI:
     @app.exception_handler(InternalError)
     @app.exception_handler(CampusConnectError)
     async def internal_error_handler(request: Request, exc: CampusConnectError):
-        logger.error("Unhandled CampusConnectError: %s", exc.message, exc_info=exc)
+        rid = getattr(request.state, "request_id", None) or get_request_id() or "unknown"
+        logger.error("Unhandled CampusConnectError: %s [request_id=%s]", exc.message, rid, exc_info=exc)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"error": "internal_error", "message": "An unexpected error occurred."},
+            content={
+                "error": "internal_error",
+                "message": "An unexpected error occurred.",
+                "request_id": rid,
+            },
+            headers={"X-Request-ID": rid} if rid != "unknown" else {},
         )
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):
-        logger.error("Unhandled exception: %s", str(exc), exc_info=exc)
+        rid = getattr(request.state, "request_id", None) or get_request_id() or "unknown"
+        logger.error("Unhandled exception: %s [request_id=%s]", str(exc), rid, exc_info=exc)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"error": "internal_error", "message": "An unexpected error occurred."},
+            content={
+                "error": "internal_error",
+                "message": "An unexpected error occurred.",
+                "request_id": rid,
+            },
+            headers={"X-Request-ID": rid} if rid != "unknown" else {},
         )
 
     # ------------------------------------------------------------------

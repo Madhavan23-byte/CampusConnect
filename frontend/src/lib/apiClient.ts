@@ -43,6 +43,14 @@ let refreshQueue: Array<{
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
+    // Observability: propagate backend request correlation ID on errors
+    const requestId =
+      error.response?.headers?.['x-request-id'] ||
+      (error.response?.data as { request_id?: string })?.request_id
+    if (requestId) {
+      ;(error as unknown as { requestId?: string }).requestId = requestId
+    }
+
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
 
     // Do not attempt token refresh for auth endpoints (login, refresh)
